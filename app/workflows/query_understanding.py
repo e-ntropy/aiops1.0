@@ -18,7 +18,20 @@ from app.workflows.models import (
 )
 
 _LOCAL_TERMS = ("本机", "这台电脑", "我的电脑", "当前电脑", "localhost", "本地机器")
-_LIVE_TERMS = ("现在", "当前", "查看", "检查", "运行", "进程", "端口", "占用")
+_LIVE_TERMS = (
+    "现在",
+    "当前",
+    "查看",
+    "检查",
+    "查一下",
+    "运行",
+    "进程",
+    "端口",
+    "占用",
+    "show",
+    "usage",
+    "status",
+)
 _DIAGNOSIS_TERMS = ("故障", "报错", "异常", "失败", "超时", "oom", "根因", "排查")
 _OPTIMIZATION_TERMS = ("优化", "调优", "降低占用", "提升性能", "怎么改", "清理")
 _CAPACITY_TERMS = (
@@ -55,6 +68,7 @@ _AIOPS_DOMAIN_TERMS = (
     "告警",
     "错误预算",
     "可用性",
+    "oom",
 )
 _REMOTE_HINT = re.compile(
     r"\b(?:[a-zA-Z][a-zA-Z0-9_.-]{2,}|(?:\d{1,3}\.){3}\d{1,3})\b"
@@ -64,6 +78,16 @@ _REMOTE_HINT = re.compile(
 def _contains_any(text: str, terms: Sequence[str]) -> bool:
     lowered = text.lower()
     return any(term in lowered for term in terms)
+
+
+def _contains_non_negated_write(text: str) -> bool:
+    """识别真实写请求；“不要重启/不修改配置”只表达安全约束。"""
+    sanitized = text.lower()
+    prefixes = ("不要", "无需", "不需要", "禁止", "别", "不")
+    for term in _WRITE_TERMS:
+        pattern = rf"(?:{'|'.join(prefixes)})\s*(?:自动)?\s*{re.escape(term)}"
+        sanitized = re.sub(pattern, "", sanitized)
+    return _contains_any(sanitized, _WRITE_TERMS)
 
 
 def deterministic_understanding(raw_query: str) -> QueryUnderstanding:
@@ -87,7 +111,8 @@ def deterministic_understanding(raw_query: str) -> QueryUnderstanding:
         intents.append(WorkflowIntent.OPTIMIZATION)
     if _contains_any(text, _LIVE_TERMS):
         intents.append(WorkflowIntent.STATUS_QUERY)
-    if _contains_any(text, _KNOWLEDGE_TERMS):
+    domain_related = _contains_any(text, _AIOPS_DOMAIN_TERMS) or bool(intents)
+    if _contains_any(text, _KNOWLEDGE_TERMS) and domain_related:
         intents.append(WorkflowIntent.KNOWLEDGE_QA)
     if not intents:
         intents.append(
@@ -99,7 +124,7 @@ def deterministic_understanding(raw_query: str) -> QueryUnderstanding:
 
     is_local = _contains_any(text, _LOCAL_TERMS)
     remote_tokens = [token for token in _REMOTE_HINT.findall(text) if "." in token]
-    write_requested = _contains_any(text, _WRITE_TERMS)
+    write_requested = _contains_non_negated_write(text)
     explicit_explanation = (
         WorkflowIntent.KNOWLEDGE_QA in intents
         and not _contains_any(text, _ACTION_TERMS)
@@ -116,6 +141,18 @@ def deterministic_understanding(raw_query: str) -> QueryUnderstanding:
         }
     ):
         intents.insert(0, WorkflowIntent.OPTIMIZATION)
+    weak_oom_explanation_with_live_query = (
+        WorkflowIntent.KNOWLEDGE_QA in intents
+        and WorkflowIntent.STATUS_QUERY in intents
+        and WorkflowIntent.FAULT_DIAGNOSIS in intents
+        and "oom" in text.lower()
+        and not _contains_any(
+            text,
+            ("故障", "报错", "异常", "失败", "超时", "根因", "排查", "诊断"),
+        )
+    )
+    if weak_oom_explanation_with_live_query:
+        intents.remove(WorkflowIntent.FAULT_DIAGNOSIS)
 
     priority = (
         WorkflowIntent.SYSTEM_INSPECTION,

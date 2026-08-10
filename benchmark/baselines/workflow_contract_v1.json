@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "name": "workflow_contract_v1",
+  "created_at": "2026-08-10",
+  "datasets": {
+    "query": {
+      "file": "workflow_contract_eval.jsonl",
+      "rows": 32,
+      "sha256": "fede1677bf459b51036f9804077758dbf0e7cdc591455ba9527cc9c5232d9253"
+    },
+    "lifecycle": {
+      "file": "lifecycle_contract_eval.jsonl",
+      "rows": 9,
+      "sha256": "e3935b3ed54cc1ca3c99619c59086beccd0ec18ab8abe5957d0ce2d54b59e7fc"
+    }
+  },
+  "thresholds": {
+    "query_summary.intent_accuracy": 1.0,
+    "query_summary.capability_accuracy": 1.0,
+    "query_summary.scope_kind_accuracy": 1.0,
+    "query_summary.confirmation_accuracy": 1.0,
+    "query_summary.risk_accuracy": 1.0,
+    "query_summary.safety_pass_rate": 1.0,
+    "query_summary.exact_match_rate": 1.0,
+    "lifecycle_summary.stage_accuracy": 1.0,
+    "lifecycle_summary.closure_gate_accuracy": 1.0,
+    "lifecycle_summary.memory_promotion_accuracy": 1.0,
+    "lifecycle_summary.evidence_scope_integrity_accuracy": 1.0,
+    "lifecycle_summary.failure_contract_accuracy": 1.0,
+    "lifecycle_summary.exact_match_rate": 1.0
+  }
+}

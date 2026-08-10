@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import re
 
 from app.workflows.models import (
@@ -47,6 +48,11 @@ def resolve_scope(understanding: QueryUnderstanding) -> TargetScope:
     entity_service = understanding.entities.get("service", "").strip()
     target_match = _IP_OR_HOST.search(raw)
     resource = entity_resource or (target_match.group(1) if target_match else "")
+    if resource and re.fullmatch(r"(?:\d{1,3}\.){3}\d{1,3}", resource):
+        try:
+            ipaddress.ip_address(resource)
+        except ValueError:
+            resource = ""
     if resource or entity_service:
         return TargetScope(
             kind=ScopeKind.SERVICE if entity_service else ScopeKind.REMOTE_HOST,

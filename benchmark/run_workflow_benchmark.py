@@ -23,6 +23,7 @@ BENCH_DIR = ROOT / "benchmark"
 REPORT_DIR = BENCH_DIR / "reports"
 QUERY_EVAL_FILE = BENCH_DIR / "workflow_contract_eval.jsonl"
 LIFECYCLE_EVAL_FILE = BENCH_DIR / "lifecycle_contract_eval.jsonl"
+DEFAULT_BASELINE_FILE = BENCH_DIR / "baselines" / "workflow_contract_v1.json"
 
 
 def load_rows(
@@ -375,6 +376,73 @@ def summarize_lifecycle(details: list[dict[str, Any]]) -> dict[str, Any]:
     return summary
 
 
+def _nested_value(payload: dict[str, Any], dotted_path: str) -> Any:
+    current: Any = payload
+    for key in dotted_path.split("."):
+        if not isinstance(current, dict) or key not in current:
+            return None
+        current = current[key]
+    return current
+
+
+def evaluate_gate(
+    payload: dict[str, Any],
+    baseline: dict[str, Any],
+) -> dict[str, Any]:
+    checks: list[dict[str, Any]] = []
+    active_suites = {
+        name
+        for name, metadata in (payload.get("datasets") or {}).items()
+        if int((metadata or {}).get("rows") or 0) > 0
+    }
+    for suite, expected in (baseline.get("datasets") or {}).items():
+        if suite not in active_suites:
+            continue
+        actual = (payload.get("datasets") or {}).get(suite) or {}
+        checks.extend(
+            [
+                {
+                    "name": f"dataset.{suite}.rows",
+                    "actual": int(actual.get("rows") or 0),
+                    "expected": int(expected.get("rows") or 0),
+                    "operator": ">=",
+                    "passed": int(actual.get("rows") or 0)
+                    >= int(expected.get("rows") or 0),
+                },
+                {
+                    "name": f"dataset.{suite}.sha256",
+                    "actual": str(actual.get("sha256") or ""),
+                    "expected": str(expected.get("sha256") or ""),
+                    "operator": "==",
+                    "passed": str(actual.get("sha256") or "")
+                    == str(expected.get("sha256") or ""),
+                },
+            ]
+        )
+    for metric, minimum in (baseline.get("thresholds") or {}).items():
+        suite = metric.split("_summary", 1)[0]
+        if suite not in active_suites:
+            continue
+        actual = _nested_value(payload, metric)
+        checks.append(
+            {
+                "name": metric,
+                "actual": actual,
+                "expected": float(minimum),
+                "operator": ">=",
+                "passed": isinstance(actual, (int, float))
+                and float(actual) >= float(minimum),
+            }
+        )
+    failed = [item for item in checks if not item["passed"]]
+    return {
+        "baseline": baseline.get("name", ""),
+        "passed": not failed,
+        "checks": checks,
+        "failed": failed,
+    }
+
+
 def write_report(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
@@ -430,6 +498,16 @@ async def run_workflow_benchmark(args: argparse.Namespace) -> dict[str, Any]:
             "lifecycle": lifecycle_details,
         },
     }
+    baseline_path: Path | None = None
+    if args.enforce or args.baseline:
+        baseline_path = Path(args.baseline) if args.baseline else DEFAULT_BASELINE_FILE
+        if not baseline_path.is_absolute():
+            baseline_path = ROOT / baseline_path
+        if not baseline_path.is_file():
+            raise SystemExit(f"Workflow benchmark baseline not found: {baseline_path}")
+        baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+        payload["gate"] = evaluate_gate(payload, baseline)
+        payload["gate"]["baseline_file"] = str(baseline_path)
     tag = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     output = Path(args.output) if args.output else REPORT_DIR / f"workflow_contract_{tag}.json"
     if not output.is_absolute():
@@ -455,6 +533,15 @@ async def run_workflow_benchmark(args: argparse.Namespace) -> dict[str, Any]:
             f"exact={summary['exact_match_rate']:.3f}"
         )
     print(f"report: {output}")
+    if payload.get("gate"):
+        gate = payload["gate"]
+        print(
+            f"gate: {'PASS' if gate['passed'] else 'FAIL'} "
+            f"| baseline={gate['baseline']} failed={len(gate['failed'])}"
+        )
+        if args.enforce and not gate["passed"]:
+            failed_names = ", ".join(item["name"] for item in gate["failed"])
+            raise SystemExit(f"Workflow benchmark gate failed: {failed_names}")
     return payload
 
 
@@ -464,6 +551,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--ids", type=str, default=None, help="Comma-separated case IDs")
     parser.add_argument("--output", type=str, default=None)
+    parser.add_argument("--baseline", type=str, default=None)
+    parser.add_argument("--enforce", action="store_true")
     return parser
 
 

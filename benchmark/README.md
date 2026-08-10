@@ -6,7 +6,7 @@
 - `retrieval_rk_50.jsonl`: 50 条检索侧 R@K 题, 每个场景 5 条。
 - `skill_router_eval.jsonl`: 40 条 Skill Router/OOS 评测。
 - `diagnosis_e2e_10.jsonl`: 10 条 Fast/Deep 诊断评测。
-- `workflow_contract_eval.jsonl`: 20 条 Query/Capability/Scope/安全契约评测。
+- `workflow_contract_eval.jsonl`: 32 条 Query/Capability/Scope/安全与对抗契约评测。
 - `lifecycle_contract_eval.jsonl`: 9 条确认、恢复、关闭和 Memory 门禁评测。
 - `run_benchmark.py`: 支持 retrieval / ragas / workflow 三种模式。
 - `run_skill_router_benchmark.py`: Skill 选择与结构化 OOS 判分。
@@ -24,11 +24,16 @@
 python benchmark/run_benchmark.py workflow
 python benchmark/run_benchmark.py workflow --suite query
 python benchmark/run_benchmark.py workflow --suite lifecycle
+python benchmark/run_benchmark.py workflow --enforce
 ```
 
 报告写入 `benchmark/reports/workflow_contract_*.json`，Web UI 的“AIOps 质量评估”面板可查看
 汇总和失败样本。它验证 Intent、Capability、Scope、二次确认、只读 Tool 白名单、后台执行亲和性、
 生命周期阶段、关闭门禁和 Memory 晋升。当前规模仅用于契约回归，不代表生产准确率。
+
+`--enforce` 使用 `benchmark/baselines/workflow_contract_v1.json`，同时校验数据集 SHA-256、
+最小样本数和版本化参考阈值。数据集或阈值只能在审阅新失败、Gold 和安全影响后更新，不能为了让
+门禁通过而静默降低标准。
 
 ## 前置条件
 

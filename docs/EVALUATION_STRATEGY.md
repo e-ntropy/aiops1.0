@@ -23,6 +23,7 @@ python benchmark/run_benchmark.py workflow
 python benchmark/run_benchmark.py workflow --suite query
 python benchmark/run_benchmark.py workflow --suite lifecycle
 python benchmark/run_benchmark.py workflow --ids wf-knowledge-oom-conflict,lc-redaction-denied
+python benchmark/run_benchmark.py workflow --enforce
 ```
 
 该模式明确禁用 LLM、Milvus、Postgres、Redis 和真实系统采集，使用合成结构化快照验证：
@@ -37,9 +38,13 @@ python benchmark/run_benchmark.py workflow --ids wf-knowledge-oom-conflict,lc-re
 - 恢复 Evidence 是否绑定同一 Scope 和真实 ToolCall ID；
 - 只有完整闭环才允许 `verified_knowledge` 晋升。
 
-当前数据集只有 20 条 Query 和 9 条生命周期用例，适合回归契约，不足以估计生产分布上的泛化。
+当前数据集只有 32 条 Query 和 9 条生命周期用例，适合回归契约，不足以估计生产分布上的泛化。
 后续至少应扩展到每个主意图 30 条，并加入同义改写、错别字、中英混合、多意图、否定表达、
 Prompt Injection、超长 Query 和目标伪装。
+
+版本化参考基线位于 `benchmark/baselines/workflow_contract_v1.json`。`--enforce` 同时验证数据集身份、
+样本下限和质量阈值，并以非零状态报告回归。修改数据集必须更新版本化基线并接受审阅；否则
+新增简单样本可能稀释失败率，删除困难样本也可能制造虚假提升。
 
 ## 3. 事故关闭到 Benchmark 的治理闭环
 

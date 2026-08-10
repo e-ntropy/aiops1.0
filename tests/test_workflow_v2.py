@@ -66,6 +66,28 @@ class QueryUnderstandingTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(state.capability_id)
         self.assertFalse(state.allowed_tools)
 
+    def test_non_aiops_explanation_is_out_of_scope(self) -> None:
+        result = deterministic_understanding("量子纠缠是什么，为什么会发生？")
+        self.assertEqual(result.primary_intent, WorkflowIntent.OUT_OF_SCOPE)
+
+    def test_negated_write_does_not_raise_risk(self) -> None:
+        result = deterministic_understanding("不要重启，只查看本机后台进程")
+        self.assertEqual(result.primary_intent, WorkflowIntent.STATUS_QUERY)
+        self.assertEqual(result.risk_level.value, "read_only")
+        self.assertFalse(result.requires_confirmation)
+
+    def test_explanatory_oom_with_live_task_routes_status(self) -> None:
+        result = deterministic_understanding("先解释 OOM 是什么，再查看本机内存占用")
+        self.assertEqual(result.primary_intent, WorkflowIntent.STATUS_QUERY)
+
+    async def test_invalid_ip_scope_requires_clarification(self) -> None:
+        state = await prepare_workflow(
+            "查看 999.999.999.999 当前 CPU 状态",
+            use_llm=False,
+        )
+        self.assertEqual(state.scope.kind, ScopeKind.NONE)
+        self.assertEqual(state.phase, WorkflowPhase.CLARIFYING)
+
     async def test_prepare_local_query_resolves_scope(self) -> None:
         state = await prepare_workflow("查看本机后台进程", use_llm=False)
         self.assertEqual(state.phase, WorkflowPhase.READY)

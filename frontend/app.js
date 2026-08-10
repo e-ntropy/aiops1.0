@@ -2247,6 +2247,7 @@ async function loadEvalReports() {
                     `query=${(s.query_exact_match != null ? s.query_exact_match.toFixed(3) : "—")}`,
                     `safety=${(s.safety_pass_rate != null ? s.safety_pass_rate.toFixed(3) : "—")}`,
                     `lifecycle=${(s.lifecycle_exact_match != null ? s.lifecycle_exact_match.toFixed(3) : "—")}`,
+                    `gate=${s.gate_pass === true ? "PASS" : s.gate_pass === false ? "FAIL" : "—"}`,
                 ];
                 metrics = tags.map((t) => `<span class="eval-metric">${escapeHtml(t)}</span>`).join("");
             }
@@ -2294,6 +2295,9 @@ async function loadEvalReport(name) {
                 ...(Object.fromEntries(Object.entries(data.lifecycle_summary || {}).map(([k, v]) => [`lifecycle_${k}`, v]))),
             };
             html += `<div class="grid grid-cols-2 gap-2 mb-3">${Object.entries(metrics).filter(([, v]) => typeof v === "number").map(([k, v]) => `<div>${escapeHtml(k)}: <span class="font-mono font-semibold ${gradeClass(v)}">${formatScore(v)}</span></div>`).join("")}</div>`;
+            if (data.gate) {
+                html += `<div class="mb-3 font-mono ${data.gate.passed ? "text-emerald-700" : "text-rose-700"}">release gate: ${data.gate.passed ? "PASS" : "FAIL"} · baseline=${escapeHtml(data.gate.baseline || "")}</div>`;
+            }
         }
         html += `<button id="eval-low" class="mt-2 px-3 py-1 text-xs text-white" style="background:var(--accent)">查看低分题</button>`;
         html += `<div id="eval-low-list" class="mt-3"></div>`;

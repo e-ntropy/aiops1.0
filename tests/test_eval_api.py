@@ -24,6 +24,7 @@ def _workflow_report() -> dict:
             "exact_match_rate": 1.0,
             "closure_gate_accuracy": 1.0,
         },
+        "gate": {"baseline": "workflow_contract_v1", "passed": True},
         "details": {
             "query": [
                 {
@@ -49,6 +50,10 @@ def _workflow_report() -> dict:
 
 
 class EvalApiWorkflowReportTests(unittest.IsolatedAsyncioTestCase):
+    def test_summary_exposes_release_gate(self) -> None:
+        summary = eval_api._summarize(_workflow_report())
+        self.assertTrue(summary["gate_pass"])
+
     async def test_light_report_counts_nested_details(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             report_dir = Path(temp)

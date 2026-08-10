@@ -805,6 +805,12 @@ def build_parser() -> argparse.ArgumentParser:
     workflow.add_argument("--limit", type=int, default=None)
     workflow.add_argument("--ids", type=str, default=None, help="Comma-separated case IDs")
     workflow.add_argument("--output", type=str, default=None)
+    workflow.add_argument("--baseline", type=str, default=None)
+    workflow.add_argument(
+        "--enforce",
+        action="store_true",
+        help="Fail when dataset identity or approved thresholds regress",
+    )
     return parser
 
 

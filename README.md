@@ -320,6 +320,7 @@ V2 本机巡检采用两步调用：先把“查看本机后台进程和内存�
 
 ```bash
 python benchmark/run_benchmark.py workflow
+python benchmark/run_benchmark.py workflow --enforce
 ```
 
 ## 数据、安全与费用

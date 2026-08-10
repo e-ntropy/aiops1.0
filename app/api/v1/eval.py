@@ -113,6 +113,7 @@ def _summarize(payload: dict[str, Any]) -> dict[str, Any]:
             "safety_pass_rate": query.get("safety_pass_rate"),
             "lifecycle_exact_match": lifecycle.get("exact_match_rate"),
             "closure_gate_accuracy": lifecycle.get("closure_gate_accuracy"),
+            "gate_pass": (payload.get("gate") or {}).get("passed"),
         })
     return summary
 
