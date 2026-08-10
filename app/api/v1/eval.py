@@ -1,6 +1,6 @@
 """评估结果只读 API.
 
-把 benchmark/reports/ 下的 retrieval / ragas 报告暴露给前端, 让"检索质量"
+把 benchmark/reports/ 下的分层评测报告暴露给前端, 让"AIOps 质量"
 可视化, 不再只能 cat JSON. 这是 RAG 半边产品化的关键差异点.
 
 约定: 报告文件名形如 `<mode>_YYYYMMDD-HHMMSS.json`, 由 benchmark/run_benchmark.py 写入.
@@ -115,13 +115,27 @@ def _summarize(payload: dict[str, Any]) -> dict[str, Any]:
             "closure_gate_accuracy": lifecycle.get("closure_gate_accuracy"),
             "gate_pass": (payload.get("gate") or {}).get("passed"),
         })
+    elif mode == "diagnosis_fixture":
+        fixture = payload.get("summary") or {}
+        summary.update({
+            "phase_accuracy": fixture.get("phase_accuracy"),
+            "mode_accuracy": fixture.get("mode_accuracy"),
+            "fault_behavior_accuracy": fixture.get("fault_behavior_accuracy"),
+            "evidence_type_recall": fixture.get("mean_evidence_type_recall"),
+            "isolation_pass_rate": fixture.get("isolation_pass_rate"),
+            "exact_match_rate": fixture.get("exact_match_rate"),
+            "gate_pass": (payload.get("gate") or {}).get("passed"),
+        })
     return summary
 
 
 @router.get("/reports", summary="列出最近评估报告")
 async def list_reports(
     limit: int = Query(20, ge=1, le=200),
-    mode: str | None = Query(None, description="可选: 只列某种模式 (retrieval / ragas)"),
+    mode: str | None = Query(
+        None,
+        description="可选: retrieval / ragas / workflow_contract / diagnosis_fixture",
+    ),
 ) -> dict[str, Any]:
     """按 mtime 倒序返回报告概览, 不含 details (太大)."""
     if not REPORTS_DIR.exists():
@@ -240,10 +254,28 @@ async def list_low_scores(
                 "query": f"Lifecycle case: {row.get('id')}",
                 "score": row.get("checks"),
             })
+    elif mode == "diagnosis_fixture":
+        for row in details:
+            if row.get("exact_match"):
+                continue
+            out.append({
+                "id": row.get("id"),
+                "scenario": row.get("category"),
+                "query": (
+                    f"{row.get('task_class')} / {row.get('polarity')} / "
+                    f"{row.get('difficulty')}"
+                ),
+                "score": {
+                    "checks": row.get("checks"),
+                    "isolation": row.get("isolation_checks"),
+                },
+            })
     out.sort(key=lambda x: (x.get("score") if isinstance(x.get("score"), (int, float)) else 0.0))
     result_metric = (
         metric
         if mode == "ragas"
-        else "exact_match" if mode == "workflow_contract" else "hit"
+        else "exact_match"
+        if mode in {"workflow_contract", "diagnosis_fixture"}
+        else "hit"
     )
     return {"mode": mode, "metric": result_metric, "threshold": threshold, "count": len(out), "items": out[:limit]}

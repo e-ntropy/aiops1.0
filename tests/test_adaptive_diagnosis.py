@@ -40,6 +40,23 @@ def _report(text: str) -> dict[str, Any]:
     return {"type": "report", "message": "report", "data": {"report": text}}
 
 
+def _evidence(source: str, evidence_type: str, *, trusted: bool = True) -> dict[str, Any]:
+    return {
+        "type": "evidence",
+        "message": "fixture evidence",
+        "data": {
+            "source": source,
+            "evidence_type": evidence_type,
+            "status": "observed",
+            "summary": f"{source} structured evidence",
+            "content": {"fixture": True},
+            "tool_call_id": f"tool-{source}" if trusted else "",
+            "trusted_observation": trusted,
+            "metadata": {"fixture_id": "unit-test"},
+        },
+    }
+
+
 class AdaptiveDiagnosisTests(unittest.IsolatedAsyncioTestCase):
     async def _state(self):
         return await prepare_workflow("本机内存异常，排查根因", use_llm=False)
@@ -79,6 +96,79 @@ class AdaptiveDiagnosisTests(unittest.IsolatedAsyncioTestCase):
         events = [event async for event in stream_adaptive_diagnosis(await self._state(), runner=runner)]
         self.assertEqual(events[-1]["type"], "adaptive_failed")
         self.assertEqual(events[-1]["data"]["state"]["phase"], "failed")
+
+    async def test_structured_evidence_is_scoped_and_preserved(self) -> None:
+        runner = FakeDiagnosisRunner(
+            [
+                _evidence("metrics_fixture", "metric_snapshot"),
+                _evidence("logs_fixture", "log_excerpt"),
+                _report("fixture fast report"),
+            ],
+            [],
+        )
+        events = [
+            event
+            async for event in stream_adaptive_diagnosis(
+                await self._state(),
+                runner=runner,
+            )
+        ]
+        state = events[-1]["data"]["state"]
+        observed = [item for item in state["evidence"] if item["status"] == "observed"]
+        self.assertEqual(len(observed), 2)
+        self.assertTrue(all(item["scope"]["resource_id"] == "localhost" for item in observed))
+        self.assertTrue(all(item["tool_call_id"] for item in observed))
+
+    async def test_untrusted_structured_observation_fails_closed(self) -> None:
+        runner = FakeDiagnosisRunner(
+            [_evidence("model_text", "metric_snapshot", trusted=False), _report("weak")],
+            [],
+        )
+        events = [
+            event
+            async for event in stream_adaptive_diagnosis(
+                await self._state(),
+                runner=runner,
+            )
+        ]
+        self.assertEqual(events[-1]["type"], "adaptive_failed")
+        state = events[-1]["data"]["state"]
+        self.assertEqual(state["evidence"][0]["status"], "error")
+        self.assertIn("拒绝", state["evidence"][0]["summary"])
+
+    async def test_malformed_structured_evidence_does_not_break_loop(self) -> None:
+        malformed = _evidence("bad_fixture", "metric_snapshot")
+        malformed["data"]["status"] = "invented_status"
+        malformed["data"]["content"] = "not-a-dict"
+        malformed["data"]["metadata"] = "not-a-dict"
+        malformed["data"]["confidence"] = "not-a-number"
+        runner = FakeDiagnosisRunner([malformed, _report("weak")], [])
+        events = [
+            event
+            async for event in stream_adaptive_diagnosis(
+                await self._state(),
+                runner=runner,
+            )
+        ]
+        self.assertEqual(events[-1]["type"], "adaptive_failed")
+        item = events[-1]["data"]["state"]["evidence"][0]
+        self.assertEqual(item["status"], "error")
+        self.assertEqual(item["content"], {"raw_value_rejected": True})
+
+    async def test_non_mapping_event_data_is_ignored_safely(self) -> None:
+        runner = FakeDiagnosisRunner(
+            [{"type": "evidence", "message": "bad", "data": "not-a-mapping"}],
+            [],
+        )
+        events = [
+            event
+            async for event in stream_adaptive_diagnosis(
+                await self._state(),
+                runner=runner,
+            )
+        ]
+        self.assertEqual(events[-1]["type"], "adaptive_failed")
+        self.assertEqual(events[-1]["data"]["state"]["evidence"][0]["status"], "error")
 
 
 if __name__ == "__main__":

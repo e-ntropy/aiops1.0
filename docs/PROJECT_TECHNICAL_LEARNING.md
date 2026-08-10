@@ -243,6 +243,11 @@ incident_id
   -> isolated metrics/logs fixture or real datasource
   -> tool query
   -> Evidence(resource_id, time_range, source)
+
+当前重构已先落地一个可回归的隔离层：16 条自生成事故夹具通过专用离线 Runner 回放结构化
+Evidence，Observed Evidence 必须绑定 fixture ID、ToolCall ID 与 Workflow Scope，并禁止本机采集来源
+混入；`fixture --enforce` 的隔离与 Exact Match 当前为 16/16。它解决的是确定性流程污染门禁，尚未
+把真实 Fast/Deep Agent 改造成完整的远程 Scope-aware Evidence Provider，因此历史 E2E 结论仍然有效。
 ```
 
 本项目当前停止新增模块，所以该方案只能作为已识别的改进方向，不能写成已完成能力。

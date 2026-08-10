@@ -90,6 +90,9 @@ _CAPABILITIES = (
             "host_resource_diagnosis",
             "network_diagnosis",
             "container_diagnosis",
+            "database_middleware_diagnosis",
+            "application_runtime_diagnosis",
+            "message_queue_diagnosis",
             "generic_oncall",
         ],
         allowed_tools=[

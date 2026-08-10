@@ -1,0 +1,17 @@
+{
+  "name": "diagnosis_fixture_v1",
+  "dataset": {
+    "file": "diagnosis_fixture_eval.jsonl",
+    "rows": 16,
+    "sha256": "337ef463d635d407c55bbcdd433b7de2e61d6e21c2e52d966fa6ddde0db668c2"
+  },
+  "thresholds": {
+    "phase_accuracy": 1.0,
+    "mode_accuracy": 1.0,
+    "fault_behavior_accuracy": 1.0,
+    "root_cause_groups_accuracy": 1.0,
+    "evidence_types_accuracy": 1.0,
+    "isolation_pass_rate": 1.0,
+    "exact_match_rate": 1.0
+  }
+}

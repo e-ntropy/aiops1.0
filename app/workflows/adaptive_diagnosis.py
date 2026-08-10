@@ -27,10 +27,75 @@ def _adaptive_event(event_type: str, message: str, **data: Any) -> dict[str, Any
     return {"type": event_type, "message": message, "data": data}
 
 
-def _append_fast_evidence(state: WorkflowState, event: dict[str, Any]) -> None:
+def _bounded_confidence(value: Any, default: float = 0.8) -> float:
+    try:
+        return max(0.0, min(1.0, float(value)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _append_runner_evidence(
+    state: WorkflowState,
+    event: dict[str, Any],
+    *,
+    mode: str,
+) -> None:
     event_type = event.get("type")
-    data = event.get("data") or {}
-    if event_type == "tool_call":
+    raw_data = event.get("data")
+    data = raw_data if isinstance(raw_data, dict) else {}
+    if event_type == "evidence":
+        requested_status = str(data.get("status") or EvidenceStatus.OBSERVED.value)
+        try:
+            parsed_status = EvidenceStatus(requested_status)
+        except ValueError:
+            parsed_status = EvidenceStatus.ERROR
+        trusted_observation = (
+            parsed_status == EvidenceStatus.OBSERVED
+            and data.get("trusted_observation") is True
+            and bool(data.get("tool_call_id"))
+        )
+        status = (
+            EvidenceStatus.OBSERVED
+            if trusted_observation
+            else EvidenceStatus.ERROR
+            if parsed_status == EvidenceStatus.OBSERVED
+            else parsed_status
+        )
+        raw_metadata = data.get("metadata")
+        metadata = dict(raw_metadata) if isinstance(raw_metadata, dict) else {}
+        metadata.update(
+            {
+                "mode": mode,
+                "structured_runner_event": True,
+                "trusted_observation": trusted_observation,
+            }
+        )
+        state.evidence.append(
+            EvidenceItem(
+                run_id=state.run_id,
+                incident_id=state.incident_id,
+                source=str(data.get("source") or "unknown_source"),
+                type=str(data.get("evidence_type") or "runner_evidence"),
+                status=status,
+                summary=(
+                    str(data.get("summary") or "结构化现场证据")[:4000]
+                    if status != EvidenceStatus.ERROR or requested_status != "observed"
+                    else "拒绝未携带受信 ToolCall ID 的 observed Evidence"
+                ),
+                content=(
+                    dict(data.get("content") or {})
+                    if isinstance(data.get("content"), dict)
+                    else {"raw_value_rejected": True}
+                ),
+                scope=state.scope,
+                tool_call_id=str(data.get("tool_call_id") or ""),
+                confidence=_bounded_confidence(data.get("confidence") or 0.8)
+                if status == EvidenceStatus.OBSERVED
+                else 0,
+                metadata=metadata,
+            )
+        )
+    elif event_type == "tool_call":
         tool_name = str(data.get("name") or "unknown_tool")
         ok = data.get("status") == "ok" and bool(data.get("read_only", False))
         state.evidence.append(
@@ -52,7 +117,7 @@ def _append_fast_evidence(state: WorkflowState, event: dict[str, Any]) -> None:
                 },
                 scope=state.scope if ok else state.scope.model_copy(update={"validated": False}),
                 confidence=0.6 if ok else 0,
-                metadata={"mode": "fast", "result_content_recorded": False},
+                metadata={"mode": mode, "result_content_recorded": False},
             )
         )
     elif event_type == "step_complete":
@@ -66,7 +131,7 @@ def _append_fast_evidence(state: WorkflowState, event: dict[str, Any]) -> None:
                 status=EvidenceStatus.REFERENCE,
                 summary=preview[:4000],
                 confidence=0.4,
-                metadata={"mode": "fast", "not_live_proof": True},
+                metadata={"mode": mode, "not_live_proof": True},
             )
         )
 
@@ -102,7 +167,7 @@ async def stream_adaptive_diagnosis(
         diagnosis_mode=DiagnosisMode.FAST,
         cache_reports=False,
     ):
-        _append_fast_evidence(state, event)
+        _append_runner_evidence(state, event, mode="fast")
         if event.get("type") == "report":
             fast_report = str((event.get("data") or {}).get("report") or "")
         if event.get("type") == "error":
@@ -112,7 +177,7 @@ async def stream_adaptive_diagnosis(
     successful_sources = {
         item.source
         for item in state.evidence
-        if item.status == EvidenceStatus.OBSERVED and item.type == "tool_execution"
+        if item.status == EvidenceStatus.OBSERVED
     }
     if fast_report and len(successful_sources) >= 2:
         triage_confidence = 0.75
@@ -177,6 +242,7 @@ async def stream_adaptive_diagnosis(
         diagnosis_mode=DiagnosisMode.DEEP,
         cache_reports=False,
     ):
+        _append_runner_evidence(state, event, mode="deep")
         if event.get("type") == "report":
             deep_report = str((event.get("data") or {}).get("report") or "")
         if event.get("type") == "error":
@@ -200,6 +266,11 @@ async def stream_adaptive_diagnosis(
             state=state.model_dump(mode="json"),
         )
         return
+    has_structured_deep_evidence = any(
+        item.metadata.get("structured_runner_event")
+        and item.metadata.get("mode") == "deep"
+        for item in state.evidence
+    )
     state.evidence.append(
         EvidenceItem(
             run_id=child_run_id or state.run_id,
@@ -207,10 +278,17 @@ async def stream_adaptive_diagnosis(
             source="deep_diagnosis",
             type="diagnosis_report",
             status=EvidenceStatus.REFERENCE,
-            summary="Deep 诊断已生成报告；内部 Evidence 仍由旧图审计链保存。",
+            summary=(
+                "Deep 诊断已生成报告，结构化 Evidence 已并入统一状态。"
+                if has_structured_deep_evidence
+                else "Deep 诊断已生成报告；内部 Evidence 仍由旧图审计链保存。"
+            ),
             content={"parent_run_id": state.run_id, "child_run_id": child_run_id},
             confidence=0.7,
-            metadata={"mode": "deep", "legacy_evidence_adapter": True},
+            metadata={
+                "mode": "deep",
+                "legacy_evidence_adapter": not has_structured_deep_evidence,
+            },
         )
     )
     state.outcome.report_markdown = deep_report

@@ -31,16 +31,22 @@ app/
       host_resource_diagnosis/SKILL.md # CPU/内存/磁盘/本机卡顿
       network_diagnosis/SKILL.md       # 网络问题 (ping/HTTP/DNS/端口)
       container_diagnosis/SKILL.md     # Docker 容器异常
+      database_middleware_diagnosis/SKILL.md # MySQL/Redis
+      application_runtime_diagnosis/SKILL.md # JVM/Nginx/应用延迟
+      message_queue_diagnosis/SKILL.md       # Kafka/消费积压
       generic_oncall/SKILL.md          # 兜底, 必须存在
 ```
 
-当前公开版保留 4 个内置 Skill:
+当前公开版保留 7 个内置 Skill:
 
 | Skill | 说明 |
 |---|---|
 | `host_resource_diagnosis` | 主机 CPU、内存、磁盘、OOM、本机卡顿等资源类故障 |
 | `network_diagnosis` | 网站打不开、接口超时、DNS 异常、端口不通等网络问题 |
 | `container_diagnosis` | Docker 容器异常、重启循环、资源占用高、启动失败 |
+| `database_middleware_diagnosis` | MySQL 锁等待、连接池与 Redis 连接/内存问题 |
+| `application_runtime_diagnosis` | JVM、应用延迟和 Nginx upstream 故障 |
+| `message_queue_diagnosis` | Kafka lag、消费停滞、分区倾斜与重平衡 |
 | `generic_oncall` | 无法归类或多组件复合问题的通用兜底剧本 |
 
 早期实验性 Skill 已从公开版移除。当前版本优先保留本地可运行、可验证、工具边界清楚的 OnCall 场景。

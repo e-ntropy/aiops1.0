@@ -222,8 +222,9 @@ Markdown / SOP / Alert corpus
 检索结果和指标依赖当前语料、Embedding、Milvus Collection、Reranker、模型和运行环境。
 历史结果只能作为对应配置的证据，不能视为所有部署的保证。
 
-统一工作流另有不依赖 Provider 和基础设施的 `workflow_contract` 评测，覆盖 Query、Scope、
-Capability、安全不变量和事故生命周期门禁。它与检索、RAGAS、诊断 E2E 和真实事故结果构成
+统一工作流另有不依赖 Provider 和基础设施的 `workflow_contract` 与 `diagnosis_fixture` 评测，
+分别覆盖 Query/Scope/Capability/生命周期契约，以及 Fast → Evidence Gate → Deep、正反例行为和
+Evidence 夹具隔离。它们与检索、RAGAS、诊断 E2E 和真实事故结果构成
 分层评测，而不是合并成一个无法定位问题的总分。详细边界见
 [AIOps 评测策略](EVALUATION_STRATEGY.md)。
 

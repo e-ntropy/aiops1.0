@@ -811,6 +811,20 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Fail when dataset identity or approved thresholds regress",
     )
+
+    fixture = sub.add_parser(
+        "fixture",
+        help="Run offline adaptive-diagnosis incident fixture benchmark",
+    )
+    fixture.add_argument("--limit", type=int, default=None)
+    fixture.add_argument("--ids", type=str, default=None, help="Comma-separated case IDs")
+    fixture.add_argument("--output", type=str, default=None)
+    fixture.add_argument("--baseline", type=str, default=None)
+    fixture.add_argument(
+        "--enforce",
+        action="store_true",
+        help="Fail when fixture identity or approved thresholds regress",
+    )
     return parser
 
 
@@ -824,6 +838,12 @@ async def amain() -> None:
         from benchmark.run_workflow_benchmark import run_workflow_benchmark
 
         await run_workflow_benchmark(args)
+    elif args.mode == "fixture":
+        from benchmark.run_diagnosis_fixture_benchmark import (
+            run_diagnosis_fixture_benchmark,
+        )
+
+        await run_diagnosis_fixture_benchmark(args)
     else:
         raise SystemExit(f"unknown mode: {args.mode}")
 

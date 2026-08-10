@@ -48,7 +48,7 @@ V2 重构在其上提供统一 Capability Planner，将 Fast/Deep 合并为按�
 | 只读优化助手 | 基于快照生成优化建议、风险和人工确认要求，不执行任何变更 |
 | 容量与性能分析 | 计算当前 Headroom；缺历史序列时禁止伪造容量预测 |
 | 人工事故闭环 | 确认/纠正根因 → 确认只读计划 → 新快照验证恢复 → 脱敏关闭并生成评测样本 |
-| Skill-first 诊断 | 先选择主机资源、网络、容器或通用 OnCall Playbook，再收窄工具范围 |
+| Skill-first 诊断 | 按主机、网络、容器、数据库/缓存、应用运行时、消息队列或通用 OnCall Playbook 收窄工具范围 |
 | fast / deep 双模式 | fast 走 Plan-Execute-Replan；deep 走隔离专业 Agent 的证据图 |
 | 后台任务链路 | API 快速落库和入队，多个 Worker 通过 Redis Streams 后台消费 |
 | 事实与证据审计 | Postgres 保存事件、任务、AgentRun、ToolCall、Evidence、Approval 和 Report |
@@ -321,6 +321,7 @@ V2 本机巡检采用两步调用：先把“查看本机后台进程和内存�
 ```bash
 python benchmark/run_benchmark.py workflow
 python benchmark/run_benchmark.py workflow --enforce
+python benchmark/run_benchmark.py fixture --enforce
 ```
 
 ## 数据、安全与费用

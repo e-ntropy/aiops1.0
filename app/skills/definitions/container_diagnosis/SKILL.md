@@ -21,9 +21,8 @@ allowed_tools:
   - docker_stats
   - docker_logs
   - docker_inspect
-  - docker_restart
   - web_search
-risk_level: medium
+risk_level: low
 ---
 
 # Docker 容器诊断 Playbook
@@ -79,10 +78,10 @@ risk_level: medium
 - **OOM**: 调 `docker run --memory` limit 或排查容器内内存泄漏
 - **配置错**: 看挂载卷 / 环境变量 / 启动命令
 - **应用 bug**: 进入应用层排查 (转 generic_oncall + 日志)
-- **临时止血**: 如果 `DOCKER_ALLOW_RESTART=true` 已配置, 可调 `docker_restart(name)` 拉起容器, 但**先看日志** 确认重启不会丢数据
+- **临时止血建议**: 需要重启时只生成风险、前置检查和回滚建议，由人工在平台外审批执行；诊断 Skill 不调用 `docker_restart`
 
 ## 注意事项
-- **docker_restart 默认禁用** — 是写操作, 需 `.env` 显式开启 `DOCKER_ALLOW_RESTART=true`
+- **docker_restart 不在本 Skill 白名单** — 它是写操作，不能由只读诊断流程调用
 - **不要 docker rm / docker rmi** — 工具未提供, 避免误删
 - **生产环境慎重启** — 临时容器重启没事, 但有状态服务 (DB/Redis) 重启可能丢内存数据
 - **日志超过 4000 字符会截断** — 太长就用 `since_minutes` 缩小范围

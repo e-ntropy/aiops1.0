@@ -270,9 +270,10 @@ OOS 决策。修正后检查结构化 transition reason 是否包含 `ROUTER_OUT
 
 #### Q7：为什么总体只有 75%？
 
-主要错误不是 OOS，而是没有专用 Redis/MySQL/K8s 等 Skill 时，模型倾向选择
+这是历史 40 条 Router 评测的结果。主要错误不是 OOS，而是当时没有专用 Redis/MySQL/K8s 等 Skill，模型倾向选择
 `host_resource` 或 `network` 等具体 Skill，而不是 `generic_oncall`。这说明 Skill taxonomy
-和 Router prompt 存在“过度具体化”偏差。
+和 Router prompt 存在“过度具体化”偏差。当前已补充 Redis/MySQL、应用运行时和 Kafka Skill，
+但尚未在固定 Provider 配置下重跑该随机性评测，因此不能宣称总体准确率已经提升；K8s 专科仍是缺口。
 
 #### Q8：如果继续优化 Router，你会怎么做？
 

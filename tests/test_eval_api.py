@@ -49,6 +49,36 @@ def _workflow_report() -> dict:
     }
 
 
+def _fixture_report() -> dict:
+    return {
+        "mode": "diagnosis_fixture",
+        "rows": 2,
+        "elapsed_sec": 0.1,
+        "summary": {
+            "phase_accuracy": 1.0,
+            "mode_accuracy": 1.0,
+            "fault_behavior_accuracy": 0.5,
+            "mean_evidence_type_recall": 1.0,
+            "isolation_pass_rate": 1.0,
+            "exact_match_rate": 0.5,
+        },
+        "gate": {"baseline": "diagnosis_fixture_v1", "passed": False},
+        "details": [
+            {
+                "id": "fixture-failed",
+                "category": "database",
+                "task_class": "boundary",
+                "polarity": "unknown",
+                "difficulty": "complex",
+                "exact_match": False,
+                "checks": {"fault_behavior": False},
+                "isolation_checks": {"fixture_bound": True},
+            },
+            {"id": "fixture-passed", "exact_match": True},
+        ],
+    }
+
+
 class EvalApiWorkflowReportTests(unittest.IsolatedAsyncioTestCase):
     def test_summary_exposes_release_gate(self) -> None:
         summary = eval_api._summarize(_workflow_report())
@@ -85,6 +115,28 @@ class EvalApiWorkflowReportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["metric"], "exact_match")
         self.assertEqual(payload["count"], 1)
         self.assertEqual(payload["items"][0]["id"], "failed-query")
+
+    async def test_fixture_summary_and_failed_case_are_exposed(self) -> None:
+        summary = eval_api._summarize(_fixture_report())
+        self.assertEqual(summary["isolation_pass_rate"], 1.0)
+        self.assertFalse(summary["gate_pass"])
+        with tempfile.TemporaryDirectory() as temp:
+            report_dir = Path(temp)
+            name = "diagnosis_fixture_20260810-120000.json"
+            (report_dir / name).write_text(
+                json.dumps(_fixture_report(), ensure_ascii=False),
+                encoding="utf-8",
+            )
+            with patch.object(eval_api, "REPORTS_DIR", report_dir):
+                payload = await eval_api.list_low_scores(
+                    name,
+                    threshold=0.5,
+                    metric="exact_match",
+                    limit=20,
+                )
+        self.assertEqual(payload["metric"], "exact_match")
+        self.assertEqual(payload["count"], 1)
+        self.assertEqual(payload["items"][0]["id"], "fixture-failed")
 
 
 if __name__ == "__main__":
