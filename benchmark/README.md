@@ -1,14 +1,34 @@
 # Benchmark
 
-这个目录放四套评测集和三个评测脚本:
+这个目录放六套评测集和四个评测脚本:
 
 - `ragas_qa_50.jsonl`: 50 条端到端 RAGAS QA, 每个场景 5 条。
 - `retrieval_rk_50.jsonl`: 50 条检索侧 R@K 题, 每个场景 5 条。
 - `skill_router_eval.jsonl`: 40 条 Skill Router/OOS 评测。
 - `diagnosis_e2e_10.jsonl`: 10 条 Fast/Deep 诊断评测。
-- `run_benchmark.py`: 支持 retrieval / ragas 两种模式, 逐题打印滚动指标。
+- `workflow_contract_eval.jsonl`: 20 条 Query/Capability/Scope/安全契约评测。
+- `lifecycle_contract_eval.jsonl`: 9 条确认、恢复、关闭和 Memory 门禁评测。
+- `run_benchmark.py`: 支持 retrieval / ragas / workflow 三种模式。
 - `run_skill_router_benchmark.py`: Skill 选择与结构化 OOS 判分。
 - `run_diagnosis_benchmark.py`: 根因、证据引用、延迟和 Token 评测。
+- `run_workflow_benchmark.py`: 纯离线统一工作流与事故生命周期评测。
+
+完整的分层难度、事故样本治理和发布门禁见
+[AIOps 评测策略](../docs/EVALUATION_STRATEGY.md)。
+
+## 纯离线工作流契约
+
+这套评测不需要任何基础设施或 Provider，适合作为每次重构的第一道回归门：
+
+```bash
+python benchmark/run_benchmark.py workflow
+python benchmark/run_benchmark.py workflow --suite query
+python benchmark/run_benchmark.py workflow --suite lifecycle
+```
+
+报告写入 `benchmark/reports/workflow_contract_*.json`，Web UI 的“AIOps 质量评估”面板可查看
+汇总和失败样本。它验证 Intent、Capability、Scope、二次确认、只读 Tool 白名单、后台执行亲和性、
+生命周期阶段、关闭门禁和 Memory 晋升。当前规模仅用于契约回归，不代表生产准确率。
 
 ## 前置条件
 

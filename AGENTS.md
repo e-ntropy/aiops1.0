@@ -118,6 +118,7 @@ python scripts/ingest_kb_corpus.py --dry-run
 python scripts/ingest_kb_corpus.py --reset --batch 8
 python benchmark/run_benchmark.py retrieval --k 3
 python benchmark/run_benchmark.py ragas --limit 5
+python benchmark/run_benchmark.py workflow
 ```
 
 `ragas`, real diagnosis, ingestion with remote embeddings, and some health checks
@@ -131,6 +132,7 @@ gate; confirm credentials, cost, data scope, and service readiness first.
 | `README.md` | User value, prerequisites, quick start, entry points, and documentation index |
 | `docs/ARCHITECTURE.md` | Current architecture, runtime boundaries, safety boundaries, and known limitations |
 | `docs/CONCURRENCY_TEST_GUIDE.md` | Reproducible queue, rate-limit, and concurrency checks |
+| `docs/EVALUATION_STRATEGY.md` | Evaluation layers, dataset governance, difficulty, and release gates |
 | `docs/PRESSURE_TEST_REPORT.md` | Historical environment-specific pressure-test evidence |
 | `app/api/` | HTTP/SSE ingress and request/response contracts |
 | `app/services/` | Use-case services such as diagnosis and RAG chat |
@@ -144,7 +146,7 @@ gate; confirm credentials, cost, data scope, and service readiness first.
 | `app/incidents/`, `app/evidence/`, `app/db/` | Incident, evidence, persistence, and schema ownership |
 | `app/queue/` | Redis Streams, worker coordination, and queue observability |
 | `app/core/`, `app/rag/` | Provider clients, embeddings, retrieval, reranking, and shared infrastructure |
-| `benchmark/` | Retrieval/RAG evaluation datasets, runner, and generated reports |
+| `benchmark/` | Workflow contracts, retrieval/RAG/diagnosis datasets, runners, and generated reports |
 | `tests/` | Focused deterministic workflow and contract regression tests |
 | `data/kb_corpus/` | Versioned public RAG corpus; not operational documentation |
 | `data/wiki/` | Runtime-generated experience store; only conventions are versioned |

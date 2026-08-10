@@ -45,6 +45,27 @@ class QueryUnderstandingTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.requires_confirmation)
         self.assertEqual(result.risk_level.value, "high")
 
+    def test_explanatory_fault_term_stays_knowledge(self) -> None:
+        result = deterministic_understanding("OOM 是什么，为什么会发生？")
+        self.assertEqual(result.primary_intent, WorkflowIntent.KNOWLEDGE_QA)
+
+    def test_evaluation_beats_generic_live_word(self) -> None:
+        result = deterministic_understanding("运行离线 benchmark 回归测试")
+        self.assertEqual(result.primary_intent, WorkflowIntent.EVALUATION)
+
+    def test_destructive_only_request_routes_to_readonly_optimization_gate(self) -> None:
+        result = deterministic_understanding("删除本机所有临时文件并停止相关进程")
+        self.assertEqual(result.primary_intent, WorkflowIntent.OPTIMIZATION)
+        self.assertEqual(result.risk_level.value, "high")
+        self.assertTrue(result.requires_confirmation)
+
+    async def test_out_of_scope_request_fails_closed(self) -> None:
+        state = await prepare_workflow("帮我写一首关于夏天的诗", use_llm=False)
+        self.assertEqual(state.query.primary_intent, WorkflowIntent.OUT_OF_SCOPE)
+        self.assertEqual(state.phase, WorkflowPhase.FAILED)
+        self.assertFalse(state.capability_id)
+        self.assertFalse(state.allowed_tools)
+
     async def test_prepare_local_query_resolves_scope(self) -> None:
         state = await prepare_workflow("查看本机后台进程", use_llm=False)
         self.assertEqual(state.phase, WorkflowPhase.READY)

@@ -1,6 +1,7 @@
 # Multi-Agent AIOps Platform — 可复现评测报告
 
 > 评测日期: 2026-07-28  
+> 离线工作流契约追加日期: 2026-08-10
 > 环境: Windows 11、Python 3.11、Docker Desktop、DeepSeek API  
 > 本地模型: `BAAI/bge-small-zh-v1.5` embedding  
 > 说明: 以下仅记录实际执行结果，不把 smoke test、静态检查或理论分析写成总体质量。
@@ -13,6 +14,7 @@
 | Skill Router | 40 | 总体 75.0%、非 OOS 71.4%、OOS 100% | `skill_router_20260728-080603Z.json` |
 | RAGAS + OpenEvals | 50/50 成功 | faithfulness 0.869、helpfulness 0.898 | `ragas_20260728-165320.json` |
 | Diagnosis E2E | 10 × Fast/Deep，20/20 成功 | Fast Top-1 50%、Deep Top-1 0% | `diagnosis_e2e_rescored_20260728-091959Z.json` |
+| Workflow Contract | Query 20 + Lifecycle 9 | Query Exact 100%、Safety 100%、Lifecycle Exact 100% | `python benchmark/run_benchmark.py workflow` |
 
 ## 2. Skill Router：修正后的 OOS 判分
 
@@ -122,3 +124,26 @@ Fast 报告的根因章节提取已支持“二、根因分析”等带中文序
 - “Deep 比 Fast 更准确”。
 - “生产级 AIOps”或“真实生产事故准确率”。
 - 本地 reranker 已有效带来增益。
+
+## 7. 统一工作流离线契约基线（2026-08-10）
+
+本次不调用 LLM、Milvus、Postgres、Redis 或真实系统工具。20 条 Query Gold 覆盖知识、状态、
+巡检、诊断、优化、容量、复盘、评测、越界、写操作和意图冲突；9 条生命周期 Gold 覆盖人工
+纠正、计划拒绝、恢复失败、缺基线、Scope 不一致、采集失败、脱敏拒绝和完整关闭。
+
+| 指标 | 修复前 | 修复后 |
+| --- | ---: | ---: |
+| Query Intent Accuracy | 75.0% | 100.0% |
+| Query Capability Accuracy | 75.0% | 100.0% |
+| Query Scope Accuracy | 100.0% | 100.0% |
+| Query Safety Pass | 100.0% | 100.0% |
+| Query Exact Match | 75.0% | 100.0% |
+| Lifecycle Stage / Closure / Memory / Exact | — | 100.0% |
+
+失败分析推动了五项规则修复：解释型故障术语保持知识意图、评测语义优先于通用“运行”、非
+AIOps 请求关闭式终止、纯写操作进入只读优化确认门、以及“当前……是什么意思”不自动升级为
+现场查询。数据集 SHA-256：Query `b17ed3c9...df93`，Lifecycle `e3935b3e...e7fc`。
+
+该结果仅证明 29 条确定性契约全部满足，不代表真实故障诊断准确率。面试或简历可以表述为
+“构建离线安全回归并用失败样本驱动 Query 路由从 75% 提升到 100%（20 条合成契约）”，必须
+同时保留样本规模和离线性质。

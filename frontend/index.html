@@ -327,7 +327,7 @@
             <!-- 评估质量面板: 让 benchmark/reports/ 的 JSON 直接长在产品里 -->
             <div class="mt-8 border-t pt-6">
                 <h3 class="text-sm font-semibold mb-3 text-slate-600 flex items-center justify-between">
-                    <span>检索质量评估</span>
+                    <span>AIOps 质量评估</span>
                     <button id="eval-refresh" class="text-xs hover:underline" style="color:var(--accent)">↻ 刷新</button>
                 </h3>
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -343,7 +343,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="mt-2 text-[10px] text-slate-400">报告由 <code>python benchmark/run_benchmark.py retrieval / ragas</code> 产生。低分题给"该补哪类语料"的直接信号。</div>
+                <div class="mt-2 text-[10px] text-slate-400">报告由 <code>python benchmark/run_benchmark.py retrieval|ragas|workflow</code> 产生。失败样本分别指向语料、回答、路由、Scope 或生命周期门禁问题。</div>
             </div>
         </section>
 

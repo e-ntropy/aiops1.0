@@ -36,6 +36,26 @@ _REVIEW_TERMS = ("复盘", "上次事故", "事故总结", "时间线")
 _EVAL_TERMS = ("评测", "评估模型", "benchmark", "回归测试")
 _KNOWLEDGE_TERMS = ("是什么", "为什么", "原理", "如何理解", "区别", "什么意思")
 _WRITE_TERMS = ("重启", "停止", "结束进程", "删除", "修改配置", "扩容", "回滚", "执行")
+_ACTION_TERMS = ("查看", "检查", "巡检", "排查", "诊断", "分析", "优化", "处理", "修复")
+_AIOPS_DOMAIN_TERMS = (
+    "aiops",
+    "sre",
+    "运维",
+    "oncall",
+    "cpu",
+    "内存",
+    "磁盘",
+    "进程",
+    "容器",
+    "kubernetes",
+    "redis",
+    "mysql",
+    "nginx",
+    "监控",
+    "告警",
+    "错误预算",
+    "可用性",
+)
 _REMOTE_HINT = re.compile(
     r"\b(?:[a-zA-Z][a-zA-Z0-9_.-]{2,}|(?:\d{1,3}\.){3}\d{1,3})\b"
 )
@@ -67,22 +87,52 @@ def deterministic_understanding(raw_query: str) -> QueryUnderstanding:
         intents.append(WorkflowIntent.OPTIMIZATION)
     if _contains_any(text, _LIVE_TERMS):
         intents.append(WorkflowIntent.STATUS_QUERY)
-    if _contains_any(text, _KNOWLEDGE_TERMS) or not intents:
+    if _contains_any(text, _KNOWLEDGE_TERMS):
         intents.append(WorkflowIntent.KNOWLEDGE_QA)
+    if not intents:
+        intents.append(
+            WorkflowIntent.KNOWLEDGE_QA
+            if _contains_any(text, _AIOPS_DOMAIN_TERMS)
+            else WorkflowIntent.OUT_OF_SCOPE
+        )
     intents = list(dict.fromkeys(intents))
+
+    is_local = _contains_any(text, _LOCAL_TERMS)
+    remote_tokens = [token for token in _REMOTE_HINT.findall(text) if "." in token]
+    write_requested = _contains_any(text, _WRITE_TERMS)
+    explicit_explanation = (
+        WorkflowIntent.KNOWLEDGE_QA in intents
+        and not _contains_any(text, _ACTION_TERMS)
+        and not is_local
+        and not remote_tokens
+    )
+    if write_requested and not any(
+        intent in intents
+        for intent in {
+            WorkflowIntent.SYSTEM_INSPECTION,
+            WorkflowIntent.FAULT_DIAGNOSIS,
+            WorkflowIntent.CAPACITY_PERFORMANCE,
+            WorkflowIntent.OPTIMIZATION,
+        }
+    ):
+        intents.insert(0, WorkflowIntent.OPTIMIZATION)
 
     priority = (
         WorkflowIntent.SYSTEM_INSPECTION,
         WorkflowIntent.FAULT_DIAGNOSIS,
         WorkflowIntent.CAPACITY_PERFORMANCE,
         WorkflowIntent.OPTIMIZATION,
-        WorkflowIntent.STATUS_QUERY,
         WorkflowIntent.INCIDENT_REVIEW,
         WorkflowIntent.EVALUATION,
+        WorkflowIntent.STATUS_QUERY,
         WorkflowIntent.KNOWLEDGE_QA,
+        WorkflowIntent.OUT_OF_SCOPE,
     )
-    primary = next(intent for intent in priority if intent in intents)
-    is_local = _contains_any(text, _LOCAL_TERMS)
+    primary = (
+        WorkflowIntent.KNOWLEDGE_QA
+        if explicit_explanation
+        else next(intent for intent in priority if intent in intents)
+    )
     needs_live_data = primary in {
         WorkflowIntent.STATUS_QUERY,
         WorkflowIntent.SYSTEM_INSPECTION,
@@ -90,12 +140,10 @@ def deterministic_understanding(raw_query: str) -> QueryUnderstanding:
         WorkflowIntent.OPTIMIZATION,
         WorkflowIntent.CAPACITY_PERFORMANCE,
     }
-    remote_tokens = [token for token in _REMOTE_HINT.findall(text) if "." in token]
     missing: list[str] = []
     if needs_live_data and not is_local and not remote_tokens:
         missing.append("目标环境或资源")
 
-    write_requested = _contains_any(text, _WRITE_TERMS)
     requires_confirmation = bool(missing or write_requested)
     if missing:
         clarification = "请确认要查询的是本机、测试环境还是生产环境，并提供目标主机、服务或实例。"
@@ -119,8 +167,10 @@ def deterministic_understanding(raw_query: str) -> QueryUnderstanding:
         goals = ["建立资源基线", "计算容量余量与性能瓶颈", "说明预测所需数据"]
     elif primary == WorkflowIntent.INCIDENT_REVIEW:
         goals = ["还原事故时间线", "总结根因与行动项"]
-    else:
+    elif primary == WorkflowIntent.EVALUATION:
         goals = ["选择评测范围", "执行可复现评估"]
+    else:
+        goals = ["说明当前平台支持的 AIOps 请求范围"]
 
     subtasks = [
         QuerySubtask(
@@ -154,7 +204,8 @@ _SYSTEM_PROMPT = """你是 AIOps 请求理解器。把用户请求改写为可�
 2. 区分知识问答、实时状态、系统巡检、故障诊断、只读优化、容量性能、复盘、评测；
 3. 现场查询必须确定 environment/resource/time range；缺失时 requires_confirmation=true；
 4. 涉及重启、停止、删除、修改、扩容、回滚时 risk_level=high 并要求确认；
-5. 把目标拆成 1-8 个明确 subtasks；只输出符合 schema 的 json。"""
+5. 非 AIOps/运维/稳定性请求必须标为 out_of_scope，不能默认进入知识库；
+6. 把目标拆成 1-8 个明确 subtasks；只输出符合 schema 的 json。"""
 
 
 async def understand_query(raw_query: str, *, use_llm: bool = True) -> QueryUnderstanding:

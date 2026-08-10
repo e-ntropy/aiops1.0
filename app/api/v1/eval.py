@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -37,7 +37,7 @@ def _load_merged_reports() -> dict[str, dict[str, Any]]:
         return {}
     try:
         merged = json.loads(MERGED_REPORTS_FILE.read_text(encoding="utf-8"))
-    except Exception:
+    except (OSError, json.JSONDecodeError):
         return {}
 
     reports: dict[str, dict[str, Any]] = {}
@@ -70,8 +70,8 @@ def _load_report(name: str) -> dict[str, Any]:
 def _parse_ts(ts: str) -> str:
     """20260605-141501 → ISO8601, 解析失败原样返回."""
     try:
-        return datetime.strptime(ts, "%Y%m%d-%H%M%S").isoformat()
-    except Exception:
+        return datetime.strptime(ts, "%Y%m%d-%H%M%S").replace(tzinfo=timezone.utc).isoformat()
+    except ValueError:
         return ts
 
 
@@ -103,6 +103,17 @@ def _summarize(payload: dict[str, Any]) -> dict[str, Any]:
             "groundedness": oe.get("groundedness"),
             "helpfulness": oe.get("helpfulness"),
         })
+    elif mode == "workflow_contract":
+        query = payload.get("query_summary") or {}
+        lifecycle = payload.get("lifecycle_summary") or {}
+        summary.update({
+            "query_exact_match": query.get("exact_match_rate"),
+            "intent_accuracy": query.get("intent_accuracy"),
+            "scope_accuracy": query.get("scope_kind_accuracy"),
+            "safety_pass_rate": query.get("safety_pass_rate"),
+            "lifecycle_exact_match": lifecycle.get("exact_match_rate"),
+            "closure_gate_accuracy": lifecycle.get("closure_gate_accuracy"),
+        })
     return summary
 
 
@@ -121,7 +132,7 @@ async def list_reports(
             continue
         try:
             payloads[path.name] = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
+        except (OSError, json.JSONDecodeError):
             continue
 
     items: list[dict[str, Any]] = []
@@ -153,7 +164,12 @@ async def get_report(name: str, include_details: bool = Query(False)) -> dict[st
         return payload
     # 默认裁掉 details (avoid 几 MB), 给前端"按需展开"的能力
     light = {k: v for k, v in payload.items() if k != "details"}
-    light["details_count"] = len(payload.get("details") or [])
+    details = payload.get("details") or []
+    light["details_count"] = (
+        sum(len(items or []) for items in details.values())
+        if isinstance(details, dict)
+        else len(details)
+    )
     return light
 
 
@@ -197,5 +213,36 @@ async def list_low_scores(
                     "score": row.get("score"),
                     "hits_top": (row.get("hits") or [])[:3],
                 })
+    elif mode == "workflow_contract":
+        query_rows = details.get("query") or [] if isinstance(details, dict) else []
+        lifecycle_rows = details.get("lifecycle") or [] if isinstance(details, dict) else []
+        for row in query_rows:
+            if row.get("exact_match"):
+                continue
+            out.append({
+                "id": row.get("id"),
+                "scenario": row.get("scenario"),
+                "query": row.get("query"),
+                "score": {
+                    "correctness": row.get("correctness"),
+                    "subtask_coverage": row.get("subtask_coverage"),
+                    "safety_pass": row.get("safety_pass"),
+                },
+                "known_difficulty": row.get("known_difficulty"),
+            })
+        for row in lifecycle_rows:
+            if row.get("exact_match"):
+                continue
+            out.append({
+                "id": row.get("id"),
+                "scenario": row.get("scenario"),
+                "query": f"Lifecycle case: {row.get('id')}",
+                "score": row.get("checks"),
+            })
     out.sort(key=lambda x: (x.get("score") if isinstance(x.get("score"), (int, float)) else 0.0))
-    return {"mode": mode, "metric": metric if mode == "ragas" else "hit", "threshold": threshold, "count": len(out), "items": out[:limit]}
+    result_metric = (
+        metric
+        if mode == "ragas"
+        else "exact_match" if mode == "workflow_contract" else "hit"
+    )
+    return {"mode": mode, "metric": result_metric, "threshold": threshold, "count": len(out), "items": out[:limit]}

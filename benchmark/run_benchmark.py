@@ -792,6 +792,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Resume successful rows from a matching checkpoint and retry failed rows",
     )
     rag.add_argument("--verbose", action="store_true")
+
+    workflow = sub.add_parser(
+        "workflow",
+        help="Run offline Query/Scope/Capability/Lifecycle contract benchmark",
+    )
+    workflow.add_argument(
+        "--suite",
+        choices=("all", "query", "lifecycle"),
+        default="all",
+    )
+    workflow.add_argument("--limit", type=int, default=None)
+    workflow.add_argument("--ids", type=str, default=None, help="Comma-separated case IDs")
+    workflow.add_argument("--output", type=str, default=None)
     return parser
 
 
@@ -801,6 +814,10 @@ async def amain() -> None:
         await run_retrieval(args)
     elif args.mode == "ragas":
         await run_ragas(args)
+    elif args.mode == "workflow":
+        from benchmark.run_workflow_benchmark import run_workflow_benchmark
+
+        await run_workflow_benchmark(args)
     else:
         raise SystemExit(f"unknown mode: {args.mode}")
 

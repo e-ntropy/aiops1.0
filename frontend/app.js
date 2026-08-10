@@ -2242,6 +2242,13 @@ async function loadEvalReports() {
                     `crecall=${(s.context_recall != null ? s.context_recall.toFixed(3) : "—")}`,
                 ];
                 metrics = tags.map((t) => `<span class="eval-metric">${escapeHtml(t)}</span>`).join("");
+            } else if (rep.mode === "workflow_contract") {
+                const tags = [
+                    `query=${(s.query_exact_match != null ? s.query_exact_match.toFixed(3) : "—")}`,
+                    `safety=${(s.safety_pass_rate != null ? s.safety_pass_rate.toFixed(3) : "—")}`,
+                    `lifecycle=${(s.lifecycle_exact_match != null ? s.lifecycle_exact_match.toFixed(3) : "—")}`,
+                ];
+                metrics = tags.map((t) => `<span class="eval-metric">${escapeHtml(t)}</span>`).join("");
             }
             card.innerHTML = `
                 <div class="flex items-center justify-between mb-1">
@@ -2281,6 +2288,12 @@ async function loadEvalReport(name) {
             const oe = data.openevals_averages || {};
             const all = { ...av, ...oe };
             html += `<div class="grid grid-cols-2 gap-2 mb-3">${Object.entries(all).map(([k, v]) => `<div>${k}: <span class="font-mono font-semibold ${gradeClass(v)}">${formatScore(v)}</span></div>`).join("")}</div>`;
+        } else if (data.mode === "workflow_contract") {
+            const metrics = {
+                ...(data.query_summary || {}),
+                ...(Object.fromEntries(Object.entries(data.lifecycle_summary || {}).map(([k, v]) => [`lifecycle_${k}`, v]))),
+            };
+            html += `<div class="grid grid-cols-2 gap-2 mb-3">${Object.entries(metrics).filter(([, v]) => typeof v === "number").map(([k, v]) => `<div>${escapeHtml(k)}: <span class="font-mono font-semibold ${gradeClass(v)}">${formatScore(v)}</span></div>`).join("")}</div>`;
         }
         html += `<button id="eval-low" class="mt-2 px-3 py-1 text-xs text-white" style="background:var(--accent)">查看低分题</button>`;
         html += `<div id="eval-low-list" class="mt-3"></div>`;
@@ -2296,7 +2309,7 @@ async function loadEvalLowScores(name, mode) {
     const listEl = document.getElementById("eval-low-list");
     if (!listEl) return;
     listEl.innerHTML = `<div class="text-slate-400 italic text-xs">加载低分题...</div>`;
-    const metric = mode === "ragas" ? "faithfulness" : "hit";
+    const metric = mode === "ragas" ? "faithfulness" : mode === "workflow_contract" ? "exact_match" : "hit";
     try {
         const r = await fetch(`${API}/eval/reports/${encodeURIComponent(name)}/low-scores?metric=${metric}&threshold=0.5&limit=20`);
         const data = await r.json();

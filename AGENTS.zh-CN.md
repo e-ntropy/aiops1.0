@@ -95,6 +95,7 @@ python scripts/ingest_kb_corpus.py --dry-run
 python scripts/ingest_kb_corpus.py --reset --batch 8
 python benchmark/run_benchmark.py retrieval --k 3
 python benchmark/run_benchmark.py ragas --limit 5
+python benchmark/run_benchmark.py workflow
 ```
 
 `ragas`、真实诊断、远程 Embedding 导入和部分健康检查可能调用付费或外部 Provider。
@@ -107,6 +108,7 @@ python benchmark/run_benchmark.py ragas --limit 5
 | `README.md` | 用户价值、前置条件、快速开始、使用入口和文档索引 |
 | `docs/ARCHITECTURE.md` | 当前架构、运行边界、安全边界和已知限制 |
 | `docs/CONCURRENCY_TEST_GUIDE.md` | 可复现的队列、限流和并发检查 |
+| `docs/EVALUATION_STRATEGY.md` | 评测分层、数据集治理、难度和发布门禁 |
 | `docs/PRESSURE_TEST_REPORT.md` | 特定历史环境下的压测证据 |
 | `app/api/` | HTTP/SSE 入口和请求响应契约 |
 | `app/services/` | 诊断、RAG Chat 等用例服务 |
@@ -114,13 +116,13 @@ python benchmark/run_benchmark.py ragas --limit 5
 | `app/agents/` | fast 图节点和 deep 专业 Agent |
 | `app/diagnosis_graphs/` | deep 诊断图装配与证据归并 |
 | `app/runtime/` | Agent Harness、权限、审批、工具编排、预算和状态转换 |
-| `app/workflows/` | V2 Capability 规划/执行、Query/Scope/Evidence 契约、自适应诊断、只读分析、Memory、兜底与不变量 |
+| `app/workflows/` | V2 Capability 规划/执行、Query/Scope/Evidence 契约、自适应诊断、只读分析、事故生命周期、后台资格、Memory、兜底与不变量 |
 | `app/skills/` | Skill 模型、加载器、注册表、Playbook 和 Skill 文档 |
 | `app/tools/`、`mcp_servers/` | 工具元数据、本地工具和外部 MCP 进程边界 |
 | `app/incidents/`、`app/evidence/`、`app/db/` | 事件、证据、持久化和 Schema |
 | `app/queue/` | Redis Streams、Worker 协调和队列可观测性 |
 | `app/core/`、`app/rag/` | Provider 客户端、Embedding、检索、Rerank 和共享基础设施 |
-| `benchmark/` | 检索/RAG 评测数据集、运行器和生成报告 |
+| `benchmark/` | 工作流契约、检索/RAG/诊断评测数据集、运行器和生成报告 |
 | `tests/` | 聚焦于工作流和契约的确定性回归测试 |
 | `data/kb_corpus/` | 版本化公开 RAG 语料，不是运维文档 |
 | `data/wiki/` | 运行时经验库，只提交约定文件 |
@@ -143,6 +145,7 @@ python benchmark/run_benchmark.py ragas --limit 5
 - 可观察状态和明确证据决定完成；模型文本本身不能证明工具、任务或处置已经成功。
 - 工具执行必须保留 Skill、Permission、Guardrail、审批和审计边界。只读工具可由运行时
   策略补充；写入、通知和高风险工具需要明确授权。
+- V2 本机工作流必须绑定目标执行节点，不能交给本地系统属于其他证据目标的任意 Worker。
 - `PERMISSION_MODE=bypass` 只允许开发使用，不能推荐给公开或生产部署。
 - 可重试副作用必须具备幂等性，或明确的不确定结果恢复路径。队列 ACK、重试、Pending
   回收和 DLQ 必须保持可区分。

@@ -37,14 +37,20 @@ from app.workflows.tool_contracts import ToolCallEnvelope
 
 
 class LifecycleEvalSample(BaseModel):
+    schema_version: str = "1.0"
     id: str = Field(default_factory=lambda: f"eval_{uuid4().hex}")
     source_run_id: str
     incident_id: str = ""
+    incident_family_id: str = ""
+    review_status: str = Field(default="candidate", pattern="^candidate$")
+    dataset_split: str = Field(default="quarantine", pattern="^quarantine$")
     query: str
     expected_root_cause: str
     evidence_types: list[str] = Field(default_factory=list)
     verification_status: str
     redacted: bool = True
+    redaction_method: str = "human_attested"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

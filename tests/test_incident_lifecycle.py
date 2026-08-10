@@ -71,6 +71,8 @@ class IncidentLifecycleTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result.state.lifecycle.stage, LifecycleStage.CLOSED)
         self.assertEqual(result.eval_sample.expected_root_cause, "worker 缓存未设置上限")
+        self.assertEqual(result.eval_sample.review_status, "candidate")
+        self.assertEqual(result.eval_sample.dataset_split, "quarantine")
         verified = result.state.memory.write_decisions[-1]
         self.assertEqual(verified["tier"], "verified_knowledge")
         self.assertEqual(verified["action"], "promote")

@@ -290,7 +290,7 @@ V2 本机巡检采用两步调用：先把“查看本机后台进程和内存�
 │   ├── incidents/           # 事件与任务事实
 │   ├── queue/               # Redis Streams
 │   └── core/                # LLM、Milvus、Embedding、Rerank 等基础能力
-├── benchmark/               # 检索与 RAG 评测
+├── benchmark/               # 工作流契约、检索、RAG 与诊断评测
 ├── data/kb_corpus/          # 公开 RAG 语料
 ├── docs/                    # 架构、并发验证、压测和 SOP
 ├── frontend/                # Web UI
@@ -306,6 +306,7 @@ V2 本机巡检采用两步调用：先把“查看本机后台进程和内存�
 - [简历项目介绍与面试问答](docs/RESUME_INTERVIEW_GUIDE.md)
 - [Skill 层与扩展方式](app/skills/README.md)
 - [Benchmark 使用说明](benchmark/README.md)
+- [AIOps 分层评测策略](docs/EVALUATION_STRATEGY.md)
 - [并发与队列测试指南](docs/CONCURRENCY_TEST_GUIDE.md)
 - [历史压测报告](docs/PRESSURE_TEST_REPORT.md)
 - [Redis On-Call SOP](docs/sop/redis_oncall_sop.md)
@@ -314,6 +315,12 @@ V2 本机巡检采用两步调用：先把“查看本机后台进程和内存�
 - [AI 编码 Agent 仓库规则](AGENTS.zh-CN.md)
 
 历史压测数据只代表报告记录的机器、配置和时间点，不是其他部署环境的性能保证。
+
+无需 Provider 或基础设施即可运行统一工作流安全回归：
+
+```bash
+python benchmark/run_benchmark.py workflow
+```
 
 ## 数据、安全与费用
 
