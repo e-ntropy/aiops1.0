@@ -220,6 +220,8 @@ python scripts/mock_alert.py --list-history
 | 队列与 Worker 状态 | GET | `/api/v1/queue/status` |
 | 诊断任务列表 | GET | `/api/v1/incidents/tasks` |
 | RAG Chat | POST | `/api/v1/chat/stream` |
+| V2 请求理解与任务拆分 | POST | `/api/v1/workflows/prepare` |
+| V2 二次确认 | POST | `/api/v1/workflows/clarify` |
 | Skill 列表 | GET | `/api/v1/skills` |
 | 上传知识文档 | POST | `/api/v1/documents/upload` |
 | 就绪检查 | GET | `/api/v1/health/ready` |

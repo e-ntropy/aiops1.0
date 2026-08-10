@@ -27,6 +27,31 @@ V3 解决的是演示型 Agent 经常缺失的工程边界：
 
 ## 2. 系统上下文
 
+### V2 渐进式重构边界
+
+V2 不直接删除 V3 的 fast/deep API，而是在 `app/workflows/` 建立共享准备层，逐步把
+知识问答、状态查询、巡检、故障诊断和优化任务迁移到统一契约。当前已落地的准备链路是：
+
+```text
+Raw Query
+    -> QueryUnderstanding (保留原文、改写、Intent、Goals、Subtasks、风险)
+    -> Clarification Loop (最多两轮，缺 Scope 或高风险时暂停)
+    -> TargetScope (environment/resource/time range)
+    -> WorkflowState (统一 Evidence、Failure、Budget、Memory、Transition)
+```
+
+关键不变量：
+
+- 远程目标不明确时不得用运行 Agent 的本机数据代替；
+- `observed` Evidence 必须绑定已验证的 `TargetScope`，知识检索只能标为 reference；
+- Query 改写不得扩大用户授权，高风险意图只能保持或升级风险等级；
+- Skill 只能推荐工具，代码层 Permission/Scope/Approval 才能授权执行；
+- 未经人工确认、恢复验证、事故关闭和脱敏的经验只能进入 Candidate Memory，不能晋升为可信知识。
+
+`POST /api/v1/workflows/prepare` 暴露准备阶段；`POST /api/v1/workflows/clarify`
+接受状态和用户补充，重新理解 Query 并解析 Scope。后续里程碑会把现有 Fast 改造成 Triage，
+并把 Deep 专业 Agent 改造成 Evidence Quality Gate 后的按需升级路径。
+
 ```mermaid
 flowchart TD
     User["用户 / Web UI"] --> API["FastAPI API"]

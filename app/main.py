@@ -26,7 +26,20 @@ from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 from app.api.middleware import setup_middlewares
-from app.api.v1 import aiops, chat, documents, eval as eval_api, health, incidents, queue, skills, webhook, wiki, approvals
+from app.api.v1 import (
+    aiops,
+    approvals,
+    chat,
+    documents,
+    eval as eval_api,
+    health,
+    incidents,
+    queue,
+    skills,
+    webhook,
+    wiki,
+    workflows,
+)
 from app.config import settings
 from app.core.mcp_client import mcp_client_manager
 from app.core.milvus import milvus_manager
@@ -163,6 +176,7 @@ app.include_router(queue.router, prefix=API_PREFIX)
 app.include_router(eval_api.router, prefix=API_PREFIX)
 app.include_router(wiki.router, prefix=API_PREFIX)
 app.include_router(approvals.router, prefix=API_PREFIX)
+app.include_router(workflows.router, prefix=API_PREFIX)
 
 
 # ============================================================
