@@ -191,6 +191,16 @@ class MemoryContext(BaseModel):
     candidate_writes: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class WorkflowOutcome(BaseModel):
+    summary: str = ""
+    report_markdown: str = ""
+    recommendations: list[str] = Field(default_factory=list)
+    root_cause: str = ""
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    requires_escalation: bool = False
+    next_action: str = ""
+
+
 class WorkflowTransition(BaseModel):
     from_phase: WorkflowPhase
     to_phase: WorkflowPhase
@@ -214,6 +224,7 @@ class WorkflowState(BaseModel):
     failures: list[FailureRecord] = Field(default_factory=list)
     budgets: ExecutionBudget = Field(default_factory=ExecutionBudget)
     memory: MemoryContext = Field(default_factory=MemoryContext)
+    outcome: WorkflowOutcome = Field(default_factory=WorkflowOutcome)
     transitions: list[WorkflowTransition] = Field(default_factory=list)
     terminal_reason: str = ""
 

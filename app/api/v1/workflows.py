@@ -7,6 +7,10 @@ from app.schemas.common import ApiResponse
 from app.workflows.clarification import apply_clarification
 from app.workflows.models import WorkflowState
 from app.workflows.orchestrator import prepare_workflow
+from app.workflows.system_inspection import (
+    LocalInspectionResult,
+    execute_local_inspection,
+)
 
 router = APIRouter(prefix="/workflows", tags=["workflows-v2"])
 
@@ -46,3 +50,19 @@ async def clarify(body: WorkflowClarifyRequest) -> ApiResponse[WorkflowState]:
     )
     message = "仍需补充信息" if state.phase.value == "clarifying" else "确认完成，工作流已准备"
     return ApiResponse.success(state, message=message)
+
+
+class LocalInspectionRequest(BaseModel):
+    state: WorkflowState
+
+
+@router.post(
+    "/execute-local-inspection",
+    summary="执行已确认作用域的本机只读系统巡检",
+)
+async def execute_inspection(
+    body: LocalInspectionRequest,
+) -> ApiResponse[LocalInspectionResult]:
+    result = await execute_local_inspection(body.state)
+    message = "巡检完成" if result.state.phase.value == "completed" else "关键数据源不可用"
+    return ApiResponse.success(result, message=message)

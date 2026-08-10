@@ -10,16 +10,29 @@
   - get_local_cpu_memory
   - get_local_disk_usage
   - list_top_processes
+  - get_system_health_snapshot
 """
 
 from __future__ import annotations
 
 import platform
-from typing import Any, Dict, List
+from typing import Any
 
 import psutil
 from langchain_core.tools import tool
 from loguru import logger
+
+from app.workflows.system_inspection import PsutilSystemCollector
+
+
+@tool
+def get_system_health_snapshot(process_limit: int = 10) -> dict[str, Any]:
+    """采集可供状态机、证据审计和评测复用的本机结构化健康快照。
+
+    仅返回资源指标、PID 与进程名；不会读取命令行、环境变量或执行任何变更。
+    """
+    limit = max(1, min(int(process_limit or 10), 30))
+    return PsutilSystemCollector().collect(limit).model_dump(mode="json")
 
 
 @tool
@@ -143,7 +156,7 @@ def get_local_disk_usage() -> str:
 
 
 @tool
-def list_top_processes(sort_by: str = "memory", limit: int = 10) -> List[Dict[str, Any]]:
+def list_top_processes(sort_by: str = "memory", limit: int = 10) -> list[dict[str, Any]]:
     """列出当前电脑资源占用最高的进程.
 
     用于定位 "到底是哪个程序把 CPU/内存 拉高的", 例如 Chrome / WSL / 杀毒.

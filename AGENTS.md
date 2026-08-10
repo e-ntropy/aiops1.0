@@ -138,13 +138,14 @@ gate; confirm credentials, cost, data scope, and service readiness first.
 | `app/agents/` | Fast graph nodes and deep specialist agents |
 | `app/diagnosis_graphs/` | Deep diagnosis graph assembly and evidence reduction |
 | `app/runtime/` | Agent harness, permissions, approvals, tool orchestration, budgets, and transitions |
-| `app/workflows/` | V2 query understanding, intent/scope/evidence contracts, clarification loop, memory policy, fallbacks, and workflow invariants |
+| `app/workflows/` | V2 query understanding, intent/scope/evidence contracts, clarification loop, local read-only inspection, memory policy, fallbacks, and workflow invariants |
 | `app/skills/` | Skill models, loader, registry, playbooks, and Skill documentation |
 | `app/tools/`, `mcp_servers/` | Tool metadata, local tools, and external MCP process boundaries |
 | `app/incidents/`, `app/evidence/`, `app/db/` | Incident, evidence, persistence, and schema ownership |
 | `app/queue/` | Redis Streams, worker coordination, and queue observability |
 | `app/core/`, `app/rag/` | Provider clients, embeddings, retrieval, reranking, and shared infrastructure |
 | `benchmark/` | Retrieval/RAG evaluation datasets, runner, and generated reports |
+| `tests/` | Focused deterministic workflow and contract regression tests |
 | `data/kb_corpus/` | Versioned public RAG corpus; not operational documentation |
 | `data/wiki/` | Runtime-generated experience store; only conventions are versioned |
 | `frontend/` | Static Web UI served by FastAPI |
@@ -201,9 +202,9 @@ Changes in these areas require focused evidence and usually separate approval:
 
 ## 7. Validation Expectations
 
-The repository currently has no committed `tests/` suite, `pyproject.toml`, or CI
-workflow. Do not claim unit, integration, or end-to-end coverage that does not
-exist.
+The repository has a small committed `unittest` suite for selected workflow and
+contract behavior, but no `pyproject.toml` or CI workflow. Do not claim broad unit,
+integration, or end-to-end coverage that does not exist.
 
 Safe baseline checks:
 

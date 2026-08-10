@@ -114,13 +114,14 @@ python benchmark/run_benchmark.py ragas --limit 5
 | `app/agents/` | fast 图节点和 deep 专业 Agent |
 | `app/diagnosis_graphs/` | deep 诊断图装配与证据归并 |
 | `app/runtime/` | Agent Harness、权限、审批、工具编排、预算和状态转换 |
-| `app/workflows/` | V2 Query 理解、Intent/Scope/Evidence 契约、二次确认、Memory 策略、兜底与工作流不变量 |
+| `app/workflows/` | V2 Query 理解、Intent/Scope/Evidence 契约、二次确认、本机只读巡检、Memory 策略、兜底与工作流不变量 |
 | `app/skills/` | Skill 模型、加载器、注册表、Playbook 和 Skill 文档 |
 | `app/tools/`、`mcp_servers/` | 工具元数据、本地工具和外部 MCP 进程边界 |
 | `app/incidents/`、`app/evidence/`、`app/db/` | 事件、证据、持久化和 Schema |
 | `app/queue/` | Redis Streams、Worker 协调和队列可观测性 |
 | `app/core/`、`app/rag/` | Provider 客户端、Embedding、检索、Rerank 和共享基础设施 |
 | `benchmark/` | 检索/RAG 评测数据集、运行器和生成报告 |
+| `tests/` | 聚焦于工作流和契约的确定性回归测试 |
 | `data/kb_corpus/` | 版本化公开 RAG 语料，不是运维文档 |
 | `data/wiki/` | 运行时经验库，只提交约定文件 |
 | `frontend/` | FastAPI 提供的静态 Web UI |
@@ -164,8 +165,8 @@ python benchmark/run_benchmark.py ragas --limit 5
 
 ## 7. 验证要求
 
-仓库目前没有已提交的 `tests/` 测试套件、`pyproject.toml` 或 CI Workflow。不能声称不存在的
-单元、集成或端到端覆盖率。
+仓库已有少量针对工作流和契约行为的 `unittest`，但没有 `pyproject.toml` 或 CI Workflow。
+不能声称不存在的广泛单元、集成或端到端覆盖率。
 
 安全基线检查：
 

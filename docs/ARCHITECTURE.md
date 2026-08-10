@@ -38,6 +38,8 @@ Raw Query
     -> Clarification Loop (最多两轮，缺 Scope 或高风险时暂停)
     -> TargetScope (environment/resource/time range)
     -> WorkflowState (统一 Evidence、Failure、Budget、Memory、Transition)
+    -> Local Read-only Inspection (结构化快照、固定阈值、ToolCall 审计)
+    -> Evidence + Outcome (是否升级故障诊断)
 ```
 
 关键不变量：
@@ -49,7 +51,11 @@ Raw Query
 - 未经人工确认、恢复验证、事故关闭和脱敏的经验只能进入 Candidate Memory，不能晋升为可信知识。
 
 `POST /api/v1/workflows/prepare` 暴露准备阶段；`POST /api/v1/workflows/clarify`
-接受状态和用户补充，重新理解 Query 并解析 Scope。后续里程碑会把现有 Fast 改造成 Triage，
+接受状态和用户补充，重新理解 Query 并解析 Scope；
+`POST /api/v1/workflows/execute-local-inspection` 仅接受 `ready + local_host + validated`
+状态，采集 CPU、内存、Swap、磁盘和 Top 进程的结构化快照。采集不读取命令行和环境变量，
+超时按 Budget 有限重试，关键数据源耗尽重试后转为 `failed`，不会由模型补写现场结论。
+后续里程碑会把现有 Fast 改造成 Triage，
 并把 Deep 专业 Agent 改造成 Evidence Quality Gate 后的按需升级路径。
 
 ```mermaid
@@ -243,7 +249,8 @@ API 和 Worker 使用同一个 Python 镜像，通过 Compose Command 区分角�
 
 ## 9. 已知工程限制
 
-- 没有已提交的 `tests/`、CI Workflow、`pyproject.toml` 或统一 Formatter 配置。
+- 已有工作流契约和 Skill Router 等少量 `unittest` 回归测试，但没有完整测试覆盖、CI Workflow、
+  `pyproject.toml` 或统一 Formatter 配置。
 - 多个核心模块仍较大，职责拆分和复杂度治理需要单独重构计划与回归证据。
 - Windows `run.ps1` 不是完整 V3 后台拓扑启动器；完整部署应使用 Compose `app` Profile。
 - deep 专业 Agent 尚未统一接入 fast 的 PermissionMode 决策。

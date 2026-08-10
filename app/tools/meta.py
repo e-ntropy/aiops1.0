@@ -149,6 +149,13 @@ TOOL_META: Dict[str, ToolMeta] = {
         risk_level="low",
         search_hint="top processes 进程",
     ),
+    "get_system_health_snapshot": ToolMeta(
+        read_only=True,
+        concurrency_safe=True,
+        max_result_chars=16000,
+        risk_level="low",
+        search_hint="structured local health snapshot inspection 本机 结构化 巡检",
+    ),
 
     # ===== Prometheus (prom_tool.py) =====
     # 真指标后端: 4 个只读 PromQL 工具. 未配 PROMETHEUS_URL 时仍可注册, 工具内自降级.

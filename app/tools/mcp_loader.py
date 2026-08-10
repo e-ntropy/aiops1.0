@@ -9,8 +9,6 @@
   - 单一入口: agent 只需要 await get_all_tools(), 不用关心来源
 """
 
-from typing import List
-
 from langchain_core.tools import BaseTool
 from loguru import logger
 
@@ -20,12 +18,13 @@ from app.tools.system_tool import (
     get_local_cpu_memory,
     get_local_disk_usage,
     get_local_system_overview,
+    get_system_health_snapshot,
     list_top_processes,
 )
 from app.tools.time_tool import get_current_time
 
 
-def get_local_tools() -> List[BaseTool]:
+def get_local_tools() -> list[BaseTool]:
     """返回所有本地 @tool 工具.
 
     注: web_search 仍由 MCP server (mcp_servers/websearch_server.py) 提供.
@@ -40,10 +39,11 @@ def get_local_tools() -> List[BaseTool]:
         get_local_cpu_memory,
         get_local_disk_usage,
         list_top_processes,
+        get_system_health_snapshot,
     ]
 
 
-def get_all_tools() -> List[BaseTool]:
+def get_all_tools() -> list[BaseTool]:
     """返回本地工具 + 已加载的 MCP 工具.
 
     注意: 必须在 mcp_client_manager.connect() 完成之后调用, 否则只能拿到本地工具.
@@ -56,11 +56,10 @@ def get_all_tools() -> List[BaseTool]:
         合并后的工具列表
     """
     # 延迟 import 避免循环 (meta -> tools.__init__ -> mcp_loader)
-    from app.tools.meta import warn_unregistered_tools
-
     # §5: subagent delegate 工具 (delegate_to_evidence_collector 等)
     # 延迟 import: subagents.delegate_tools 内部依赖 mcp_loader, 避免循环
     from app.agents.subagents.delegate_tools import get_subagent_tools
+    from app.tools.meta import warn_unregistered_tools
 
     local = get_local_tools()
     mcp = mcp_client_manager.tools
