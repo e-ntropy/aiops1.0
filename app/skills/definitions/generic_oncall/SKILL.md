@@ -9,6 +9,7 @@ triggers:
 allowed_tools:
   - search_knowledge_base
   - get_current_time
+  - get_system_health_snapshot
   - get_local_system_overview
   - get_local_cpu_memory
   - get_local_disk_usage

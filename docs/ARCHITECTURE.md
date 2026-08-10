@@ -29,17 +29,19 @@ V3 解决的是演示型 Agent 经常缺失的工程边界：
 
 ### V2 渐进式重构边界
 
-V2 不直接删除 V3 的 fast/deep API，而是在 `app/workflows/` 建立共享准备层，逐步把
-知识问答、状态查询、巡检、故障诊断和优化任务迁移到统一契约。当前已落地的准备链路是：
+V2 不直接删除 V3 的 fast/deep API，而是在 `app/workflows/` 建立共享层，把知识问答、状态查询、
+巡检、自适应故障诊断、只读优化和容量性能分析迁移到统一契约。当前主链路是：
 
 ```text
 Raw Query
     -> QueryUnderstanding (保留原文、改写、Intent、Goals、Subtasks、风险)
     -> Clarification Loop (最多两轮，缺 Scope 或高风险时暂停)
     -> TargetScope (environment/resource/time range)
+    -> Capability Planner (执行策略、候选 Skill、只读 Tool 白名单)
     -> WorkflowState (统一 Evidence、Failure、Budget、Memory、Transition)
-    -> Local Read-only Inspection (结构化快照、固定阈值、ToolCall 审计)
-    -> Evidence Quality Gate (结束 / 补证 / 升级 Deep / 阻断)
+    -> Capability Executor
+       -> RAG Knowledge / Status / Inspection / Read-only Analysis
+       -> Fast Triage -> Evidence Quality Gate -> Deep (按需)
     -> Evidence + Outcome
 ```
 
@@ -56,13 +58,15 @@ Raw Query
 `POST /api/v1/workflows/execute-local-inspection` 仅接受 `ready + local_host + validated`
 状态，采集 CPU、内存、Swap、磁盘和 Top 进程的结构化快照。采集不读取命令行和环境变量，
 超时按 Budget 有限重试，关键数据源耗尽重试后转为 `failed`，不会由模型补写现场结论。
-后续里程碑会把现有 Fast 改造成 Triage，
-并把 Deep 专业 Agent 改造成 Evidence Quality Gate 后的按需升级路径。
+`POST /api/v1/workflows/execute/stream` 是六类核心能力的统一 SSE 入口。知识问答禁用现场 MCP
+工具；状态和巡检只允许已验证本机 Scope；优化和容量分析只生成建议；自适应诊断把 Fast
+ToolCall 适配为 Scope Evidence，模型步骤只标为 reference，质量不足再升级 Deep。
 
-当前 `POST /api/v1/workflows/assess-evidence` 已实现确定性质量门契约。异常或故障只有单一
+`POST /api/v1/workflows/assess-evidence` 实现确定性质量门契约。异常或故障只有单一
 现场来源时生成 Deep 子 Run 计划，并保留父 `run_id` 和已有 Evidence ID；现场 Evidence 与
-当前 Scope 不一致时直接阻断；数据源错误超过一半时先要求替代来源。旧 `/aiops/diagnose`
-仍按显式 fast/deep 模式运行，尚未接入自动升级，这是 M3 后续接线任务而非已完成功能。
+当前 Scope 不一致时直接阻断；数据源错误超过一半时先要求替代来源。V2 自适应入口已经接线；
+旧 `/aiops/diagnose` 为兼容仍保留显式 fast/deep 模式。远程自适应诊断在旧图尚未支持显式
+Scope 绑定前关闭式拒绝，目前只开放本机目标。
 
 ```mermaid
 flowchart TD

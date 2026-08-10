@@ -14,6 +14,7 @@ import psutil
 from pydantic import BaseModel, Field
 
 from app.workflows.fallbacks import FailureAction, decide_failure_action
+from app.workflows.memory_policy import attach_memory_write_policy
 from app.workflows.models import (
     EvidenceItem,
     FailureRecord,
@@ -217,6 +218,7 @@ async def execute_local_inspection(
         WorkflowIntent.STATUS_QUERY,
         WorkflowIntent.SYSTEM_INSPECTION,
         WorkflowIntent.OPTIMIZATION,
+        WorkflowIntent.CAPACITY_PERFORMANCE,
     }:
         raise ValueError("当前意图不属于系统状态或巡检")
     if state.scope.kind != ScopeKind.LOCAL_HOST:
@@ -315,6 +317,7 @@ async def execute_local_inspection(
     state.transitions.append(
         WorkflowTransition(from_phase=WorkflowPhase.EXECUTING, to_phase=WorkflowPhase.COMPLETED, reason="structured_snapshot_and_evidence_recorded")
     )
+    attach_memory_write_policy(state)
     return LocalInspectionResult(
         state=state,
         snapshot=snapshot,

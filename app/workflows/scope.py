@@ -23,6 +23,7 @@ def intent_requires_scope(intent: WorkflowIntent) -> bool:
         WorkflowIntent.SYSTEM_INSPECTION,
         WorkflowIntent.FAULT_DIAGNOSIS,
         WorkflowIntent.OPTIMIZATION,
+        WorkflowIntent.CAPACITY_PERFORMANCE,
     }
 
 
@@ -63,4 +64,3 @@ def resolve_scope(understanding: QueryUnderstanding) -> TargetScope:
         validation_errors=["实时操作需要明确目标环境和资源，禁止默认读取本机"],
         source="unresolved",
     )
-

@@ -128,9 +128,7 @@ function clearSkillHighlight() {
 let aiopsAbortController = null;   // 实时模式: SSE 中止器
 let aiopsPollTimer = null;         // 排队模式: 状态轮询定时器
 let aiopsActiveTaskId = null;      // 排队模式: 当前跟踪的 task_id
-const aiopsDiagnosisModeButtons = document.querySelectorAll("[data-aiops-diagnosis-mode]");
 const aiopsSubmitModeButtons = document.querySelectorAll("[data-aiops-submit-mode]");
-let aiopsDiagnosisMode = "fast";       // fast | deep
 let aiopsSubmitMode = "realtime";      // realtime(同步 SSE) | queue(提交排队)
 
 document.getElementById("aiops-start").addEventListener("click", startAiops);
@@ -166,8 +164,6 @@ function bindSegmentToggle(buttons, attr, getCur, setCur) {
     render();
 }
 
-bindSegmentToggle(aiopsDiagnosisModeButtons, "aiopsDiagnosisMode",
-    () => aiopsDiagnosisMode, (v) => { aiopsDiagnosisMode = v || "fast"; });
 bindSegmentToggle(aiopsSubmitModeButtons, "aiopsSubmitMode",
     () => aiopsSubmitMode, (v) => { aiopsSubmitMode = v || "realtime"; });
 
@@ -249,7 +245,7 @@ async function startAiops() {
         : runAiopsRealtime(query);
 }
 
-// 实时模式: 同步 SSE, 直接流式展示 计划 / 步骤 / token / 报告
+// 实时模式: Query 理解 -> 必要时澄清 -> 统一 Capability SSE 执行
 async function runAiopsRealtime(query) {
     const planEl = document.getElementById("aiops-plan");
     const stepsEl = document.getElementById("aiops-steps");
@@ -260,26 +256,64 @@ async function runAiopsRealtime(query) {
     reportEl.innerHTML = "";
     showAiopsMonitor();
     aiopsMonitor.reset();
-    statusEl.textContent = "Skill Router 工作中...";
+    statusEl.textContent = "正在理解 Query...";
+    setText("aiops-capability", "正在分析...");
     clearSkillHighlight();
     setAiopsRunning(true);
 
     aiopsAbortController = new AbortController();
     let hadError = false;
     try {
-        const resp = await fetch(`${API}/aiops/diagnose`, {
+        const sessionId = `web-${Date.now()}`;
+        const preparedResp = await fetch(`${API}/workflows/prepare`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                session_id: `web-${Date.now()}`,
                 query,
-                diagnosis_mode: aiopsDiagnosisMode,
+                session_id: sessionId,
+                use_llm: true,
             }),
             signal: aiopsAbortController.signal,
         });
+        const preparedBody = await preparedResp.json();
+        if (!preparedResp.ok || preparedBody?.code !== "SUCCESS") {
+            throw new Error(preparedBody?.message || `Query 理解失败: HTTP ${preparedResp.status}`);
+        }
+        let state = preparedBody.data;
+        renderUnifiedPlan(state, planEl, statusEl);
+        if (state.phase === "clarifying") {
+            const answer = window.prompt(
+                state.query?.clarification_question || "请补充目标环境、主机、服务或操作范围"
+            );
+            if (!answer) throw new Error("需要补充信息后才能安全执行");
+            const clarifiedResp = await fetch(`${API}/workflows/clarify`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ state, answer, use_llm: true }),
+                signal: aiopsAbortController.signal,
+            });
+            const clarifiedBody = await clarifiedResp.json();
+            if (!clarifiedResp.ok || clarifiedBody?.code !== "SUCCESS") {
+                throw new Error(clarifiedBody?.message || "二次确认失败");
+            }
+            state = clarifiedBody.data;
+            renderUnifiedPlan(state, planEl, statusEl);
+        }
+        if (state.phase !== "ready") {
+            throw new Error(state.query?.clarification_question || `工作流尚未就绪: ${state.phase}`);
+        }
+        const resp = await fetch(`${API}/workflows/execute/stream`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ state }),
+            signal: aiopsAbortController.signal,
+        });
+        let ragBuffer = "";
         await consumeSSE(resp, (ev) => {
-            if (ev?.type === "error") hadError = true;
-            handleAiopsEvent(ev, planEl, stepsEl, reportEl, statusEl);
+            if (["workflow_failed", "adaptive_failed", "error"].includes(ev?.type)) hadError = true;
+            ragBuffer = handleUnifiedWorkflowEvent(
+                ev, planEl, stepsEl, reportEl, statusEl, ragBuffer
+            );
         });
         if (!hadError) statusEl.textContent = "完成 ✓";
     } catch (e) {
@@ -318,7 +352,7 @@ async function submitAiopsToQueue(query) {
         const r = await fetch(`${API}/aiops/diagnose/submit`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query, mode: aiopsDiagnosisMode, session_id: `web-${Date.now()}` }),
+            body: JSON.stringify({ query, mode: "fast", session_id: `web-${Date.now()}` }),
         });
         const data = await r.json().catch(() => null);
         if (r.status === 429) {
@@ -406,6 +440,91 @@ function renderAiopsTaskStatus(task) {
             reportEl.innerHTML = `<p style="color:var(--st-failed)">${task.status === "failed" ? "诊断失败" : "已取消"}: ${escapeHtml(task.error || "")}</p>`;
             break;
     }
+}
+
+function renderUnifiedPlan(state, planEl, statusEl) {
+    const capability = state.capability_id || "unknown";
+    setText("aiops-capability", `${capability} · ${state.execution_strategy || ""}`);
+    planEl.innerHTML = "";
+    (state.plan || []).forEach((step, i) => {
+        const div = document.createElement("div");
+        div.className = "flex items-start space-x-2";
+        div.innerHTML = `<span class="bg-indigo-100 text-indigo-700 rounded-full w-5 h-5 text-xs flex items-center justify-center flex-shrink-0 mt-0.5">${i + 1}</span><span class="text-slate-700">${escapeHtml(step.objective || "")}</span>`;
+        planEl.appendChild(div);
+    });
+    (state.selected_skills || []).forEach((skill, index) => {
+        if (index === 0) highlightSkill(skill, "Capability Planner");
+    });
+    statusEl.textContent = state.phase === "clarifying"
+        ? "需要二次确认"
+        : `已路由: ${capability}`;
+}
+
+function appendUnifiedStep(stepsEl, title, detail = "") {
+    const div = document.createElement("div");
+    div.className = "step-item done";
+    div.innerHTML = `<div class="font-semibold text-xs text-indigo-700 mb-1">${escapeHtml(title)}</div>` +
+        (detail ? `<div class="text-xs text-slate-500">${escapeHtml(detail)}</div>` : "");
+    stepsEl.appendChild(div);
+    stepsEl.scrollTop = stepsEl.scrollHeight;
+}
+
+function renderUnifiedFinalState(state, reportEl, statusEl) {
+    if (!state) return;
+    const outcome = state.outcome || {};
+    showAiopsReport();
+    reportEl.innerHTML = renderMarkdown(
+        outcome.report_markdown || outcome.summary || state.terminal_reason || "工作流已结束"
+    );
+    statusEl.textContent = state.phase === "completed" ? "完成 ✓" : "失败 ✗";
+}
+
+function handleAdaptiveWorkflowEvent(adaptive, planEl, stepsEl, reportEl, statusEl) {
+    const data = adaptive?.data || {};
+    if (["fast_event", "deep_event"].includes(adaptive?.type) && data.event) {
+        handleAiopsEvent(data.event, planEl, stepsEl, reportEl, statusEl);
+    } else if (adaptive?.type === "adaptive_start") {
+        appendUnifiedStep(stepsEl, "Fast Triage", "先采集最小只读证据");
+        statusEl.textContent = "Fast Triage 执行中...";
+    } else if (adaptive?.type === "evidence_gate") {
+        const decision = data.assessment?.decision || "unknown";
+        appendUnifiedStep(stepsEl, "Evidence Quality Gate", decision);
+        statusEl.textContent = `证据质量: ${decision}`;
+    } else if (adaptive?.type === "deep_escalation") {
+        appendUnifiedStep(stepsEl, "升级 Deep", adaptive.message || "交叉取证");
+        statusEl.textContent = "Deep 多 Agent 交叉取证中...";
+    } else if (["adaptive_complete", "adaptive_failed"].includes(adaptive?.type)) {
+        renderUnifiedFinalState(data.state, reportEl, statusEl);
+    }
+}
+
+function handleUnifiedWorkflowEvent(ev, planEl, stepsEl, reportEl, statusEl, ragBuffer) {
+    const d = ev?.data || {};
+    if (ev?.type === "workflow_start") {
+        statusEl.textContent = `执行 ${ev.capability_id || "Capability"}...`;
+        return ragBuffer;
+    }
+    if (ev?.type === "capability_event") {
+        const nested = d.event || {};
+        if (["adaptive_start", "fast_event", "evidence_gate", "deep_escalation", "deep_event", "adaptive_complete", "adaptive_failed"].includes(nested.type)) {
+            handleAdaptiveWorkflowEvent(nested, planEl, stepsEl, reportEl, statusEl);
+        } else if (nested.type === "token") {
+            ragBuffer += nested.content || "";
+            showAiopsReport();
+            reportEl.innerHTML = renderMarkdown(ragBuffer);
+            statusEl.textContent = "知识回答生成中...";
+        } else if (nested.type === "progress") {
+            appendUnifiedStep(stepsEl, nested.label || nested.stage || "知识检索", nested.detail || "");
+        }
+        return ragBuffer;
+    }
+    if (["workflow_complete", "workflow_failed"].includes(ev?.type)) {
+        const result = d.result || {};
+        const state = d.state || result.state || result.inspection?.state;
+        renderUnifiedFinalState(state, reportEl, statusEl);
+        if (ev.type === "workflow_failed") statusEl.textContent = "失败 ✗";
+    }
+    return ragBuffer;
 }
 
 function handleAiopsEvent(ev, planEl, stepsEl, reportEl, statusEl) {

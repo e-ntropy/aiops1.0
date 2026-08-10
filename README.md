@@ -20,8 +20,8 @@
 > - 多 Agent 协作、工具调用、证据汇总与诊断报告生成的基本流程。
 >
 > 本项目是我的阶段性学习成果，仅适合学习和入门参考，不建议直接用于生产环境。
-> **当前项目已停止更新。** 后续我会在[个人 GitHub 仓库](https://github.com/Kkkirito-123?tab=repositories)
-> 中继续分享更深入的 Agent、RAG、Skills 知识与工程实践，新内容即将发布，敬请期待。
+> 当前仓库正在进行 V2 统一工作流重构。旧 V3 API 保持兼容，新功能优先进入
+> `app/workflows/` 的 Capability → Evidence 闭环。
 
 ---
 
@@ -30,6 +30,8 @@
 
 V3 在原有单次诊断链路上增加了 `fast / deep` 双模式、Redis Streams 队列、后台 Worker、
 Postgres 事实库、事件中心、权限与审批结构、LLM Wiki、RAG 评测和并发压测。
+V2 重构在其上提供统一 Capability Planner，将 Fast/Deep 合并为按证据质量升级的自适应诊断，
+并组合知识问答、系统状态、一键巡检、只读优化和容量性能分析。
 
 [项目视频](https://www.bilibili.com/video/BV182RCBGEod/)
 
@@ -39,6 +41,12 @@ Postgres 事实库、事件中心、权限与审批结构、LLM Wiki、RAG 评�
 
 | 能力 | 当前实现 |
 | --- | --- |
+| 统一 Capability Workflow | Query 理解 → Scope → Capability/Skill/Tool → Evidence → Outcome |
+| 运维知识问答 | 复用 RAG，只写 reference Evidence，不冒充现场状态 |
+| 状态查询与一键巡检 | 结构化 CPU/内存/磁盘/进程快照、阈值判断与 ToolCall 审计 |
+| 自适应故障诊断 | Fast Triage 先取最小证据，Evidence Gate 不满足时保留证据升级 Deep |
+| 只读优化助手 | 基于快照生成优化建议、风险和人工确认要求，不执行任何变更 |
+| 容量与性能分析 | 计算当前 Headroom；缺历史序列时禁止伪造容量预测 |
 | Skill-first 诊断 | 先选择主机资源、网络、容器或通用 OnCall Playbook，再收窄工具范围 |
 | fast / deep 双模式 | fast 走 Plan-Execute-Replan；deep 走隔离专业 Agent 的证据图 |
 | 后台任务链路 | API 快速落库和入队，多个 Worker 通过 Redis Streams 后台消费 |
@@ -88,8 +96,8 @@ deep 当前包含 MetricAgent、LogAgent、InfraAgent 和 RunbookAgent。Agent �
 ### 2. 获取代码与安装依赖
 
 ```bash
-git clone https://github.com/Kkkirito-123/mutil-rag-agent.git
-cd mutil-rag-agent
+git clone https://github.com/e-ntropy/aiops1.0.git
+cd aiops1.0
 
 python3.12 -m venv .venv
 source .venv/bin/activate
@@ -221,9 +229,13 @@ python scripts/mock_alert.py --list-history
 | 诊断任务列表 | GET | `/api/v1/incidents/tasks` |
 | RAG Chat | POST | `/api/v1/chat/stream` |
 | V2 请求理解与任务拆分 | POST | `/api/v1/workflows/prepare` |
+| V2 Capability 列表 | GET | `/api/v1/workflows/capabilities` |
 | V2 二次确认 | POST | `/api/v1/workflows/clarify` |
+| V2 统一能力执行（SSE） | POST | `/api/v1/workflows/execute/stream` |
 | V2 本机只读巡检 | POST | `/api/v1/workflows/execute-local-inspection` |
 | V2 Evidence Quality Gate | POST | `/api/v1/workflows/assess-evidence` |
+| V2 自适应诊断（SSE） | POST | `/api/v1/workflows/adaptive-diagnosis/stream` |
+| V2 只读优化/容量分析 | POST | `/api/v1/workflows/execute-readonly-analysis` |
 | Skill 列表 | GET | `/api/v1/skills` |
 | 上传知识文档 | POST | `/api/v1/documents/upload` |
 | 就绪检查 | GET | `/api/v1/health/ready` |
@@ -243,6 +255,10 @@ V2 本机巡检采用两步调用：先把“查看本机后台进程和内存�
 `assess-evidence` 再依据现场证据数量、来源多样性、错误比例、Scope 一致性、异常信号和根因
 置信度，确定性返回 `complete / collect_more / escalate_deep / blocked`；升级计划保留父 Run 与
 已有 Evidence ID，避免 Fast 与 Deep 重复丢失上下文。
+
+推荐的新入口是两步调用：先向 `prepare` 提交原始 Query；若返回 `clarifying`，通过 `clarify`
+补齐目标；状态为 `ready` 后把完整 State 交给 `execute/stream`。统一执行器按 `capability_id`
+委托已有 RAG、系统巡检、Fast/Deep 或只读分析模块，前端无需直接选择内部 Agent。
 
 ## 项目结构
 

@@ -11,7 +11,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
-from app.workflows.models import WorkflowIntent
+from app.workflows.models import WorkflowIntent, WorkflowPhase, WorkflowState
 
 
 class MemoryTier(StrEnum):
@@ -76,6 +76,7 @@ def decide_memory_reads(
         WorkflowIntent.KNOWLEDGE_QA,
         WorkflowIntent.FAULT_DIAGNOSIS,
         WorkflowIntent.OPTIMIZATION,
+        WorkflowIntent.CAPACITY_PERFORMANCE,
         WorkflowIntent.INCIDENT_REVIEW,
     }:
         filters = {"status": "verified"}
@@ -109,7 +110,13 @@ def decide_memory_writes(context: MemoryWriteContext) -> list[MemoryDecision]:
                 reason="事故事实写入 Postgres 权威记录",
             )
         )
-    if context.workflow_completed:
+    if context.workflow_completed and context.intent in {
+        WorkflowIntent.SYSTEM_INSPECTION,
+        WorkflowIntent.FAULT_DIAGNOSIS,
+        WorkflowIntent.OPTIMIZATION,
+        WorkflowIntent.CAPACITY_PERFORMANCE,
+        WorkflowIntent.INCIDENT_REVIEW,
+    }:
         decisions.append(
             MemoryDecision(
                 tier=MemoryTier.CANDIDATE,
@@ -141,6 +148,29 @@ def decide_memory_writes(context: MemoryWriteContext) -> list[MemoryDecision]:
     return decisions
 
 
+def attach_memory_write_policy(
+    state: WorkflowState,
+    *,
+    human_root_cause_confirmed: bool = False,
+    remediation_verified: bool = False,
+    incident_closed: bool = False,
+    redaction_passed: bool = False,
+) -> None:
+    """把策略决策写回 State；不直接执行任何存储写入。"""
+    decisions = decide_memory_writes(
+        MemoryWriteContext(
+            intent=state.query.primary_intent,
+            incident_id=state.incident_id,
+            workflow_completed=state.phase == WorkflowPhase.COMPLETED,
+            human_root_cause_confirmed=human_root_cause_confirmed,
+            remediation_verified=remediation_verified,
+            incident_closed=incident_closed,
+            redaction_passed=redaction_passed,
+        )
+    )
+    state.memory.write_decisions = [item.model_dump(mode="json") for item in decisions]
+
+
 def retention_decision(
     *,
     tier: MemoryTier,
@@ -158,4 +188,3 @@ def retention_decision(
     if tier == MemoryTier.VERIFIED_KNOWLEDGE and last_used_days >= 365:
         return MemoryDecision(tier=tier, action=MemoryAction.ARCHIVE, reason="长期未验证，进入复审")
     return MemoryDecision(tier=tier, action=MemoryAction.SKIP, reason="继续保留")
-

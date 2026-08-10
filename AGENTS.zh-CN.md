@@ -114,7 +114,7 @@ python benchmark/run_benchmark.py ragas --limit 5
 | `app/agents/` | fast 图节点和 deep 专业 Agent |
 | `app/diagnosis_graphs/` | deep 诊断图装配与证据归并 |
 | `app/runtime/` | Agent Harness、权限、审批、工具编排、预算和状态转换 |
-| `app/workflows/` | V2 Query 理解、Intent/Scope/Evidence 契约、二次确认、本机巡检、证据质量路由、Memory 策略、兜底与不变量 |
+| `app/workflows/` | V2 Capability 规划/执行、Query/Scope/Evidence 契约、自适应诊断、只读分析、Memory、兜底与不变量 |
 | `app/skills/` | Skill 模型、加载器、注册表、Playbook 和 Skill 文档 |
 | `app/tools/`、`mcp_servers/` | 工具元数据、本地工具和外部 MCP 进程边界 |
 | `app/incidents/`、`app/evidence/`、`app/db/` | 事件、证据、持久化和 Schema |

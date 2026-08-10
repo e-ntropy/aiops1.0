@@ -20,6 +20,7 @@ class WorkflowIntent(StrEnum):
     SYSTEM_INSPECTION = "system_inspection"
     FAULT_DIAGNOSIS = "fault_diagnosis"
     OPTIMIZATION = "optimization"
+    CAPACITY_PERFORMANCE = "capacity_performance"
     INCIDENT_REVIEW = "incident_review"
     EVALUATION = "evaluation"
     OUT_OF_SCOPE = "out_of_scope"
@@ -189,6 +190,9 @@ class MemoryContext(BaseModel):
     incident_refs: list[str] = Field(default_factory=list)
     knowledge_refs: list[str] = Field(default_factory=list)
     candidate_writes: list[dict[str, Any]] = Field(default_factory=list)
+    read_decisions: list[dict[str, Any]] = Field(default_factory=list)
+    write_decisions: list[dict[str, Any]] = Field(default_factory=list)
+    retention_actions: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class WorkflowOutcome(BaseModel):
@@ -213,6 +217,10 @@ class WorkflowState(BaseModel):
     run_id: str = Field(default_factory=lambda: f"run_{uuid4().hex}")
     session_id: str = "default"
     incident_id: str = ""
+    capability_id: str = ""
+    execution_strategy: str = ""
+    selected_skills: list[str] = Field(default_factory=list)
+    allowed_tools: list[str] = Field(default_factory=list)
     phase: WorkflowPhase = WorkflowPhase.UNDERSTANDING
     query: QueryUnderstanding
     scope: TargetScope = Field(default_factory=TargetScope)
@@ -232,4 +240,14 @@ class WorkflowState(BaseModel):
     def _raw_query_is_immutable_copy(self) -> WorkflowState:
         if not self.query.raw_query.strip():
             raise ValueError("raw_query 不能为空")
+        if self.allowed_tools:
+            from app.tools.meta import get_meta
+
+            unsafe = [
+                name
+                for name in self.allowed_tools
+                if not get_meta(name).effective_read_only({})
+            ]
+            if unsafe:
+                raise ValueError(f"统一 Capability State 只允许只读工具: {unsafe}")
         return self

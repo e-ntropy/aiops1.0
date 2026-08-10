@@ -6,13 +6,16 @@ Skill 是 OnCall Agent 的 **故障处理剧本** (Playbook), 把"怎么排障"�
 
 | 层级 | 职责 |
 |------|------|
+| **Capability** | 面向用户的完整产品流程，组合 Query、Scope、Skill、Tool、Evidence 与输出 |
 | **Tool** | 单个具体能力 (查本机状态 / 查事件日志 / 网络探测 / 查知识库) |
 | **RAG** | 知识检索, 是 Tool 的一种 (`search_knowledge_base`) |
 | **Skill** | 面向某类故障的方法论, 编排 Tool 调用顺序与输出格式 |
 | **LangGraph** | 流程编排器 (Skill Router → Planner → Executor → Replanner) |
 
-> **Skill 不是 Tool, 不是 Prompt, 也不是 Workflow.**
+> **Capability 不是 Skill。Skill 不是 Tool, 不是 Prompt, 也不是 Workflow.**
 > Skill 是"针对某类故障, 用什么思路、调什么工具、按什么顺序、输出什么格式"的剧本。
+> `app/workflows/capabilities.py` 中的 Capability 才是知识问答、巡检、自适应诊断、只读优化等
+> 用户功能；它可以复用一个或多个 Skill，而不复制新的 Agent。
 
 ## 文件布局
 

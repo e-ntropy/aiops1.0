@@ -21,6 +21,16 @@ _LOCAL_TERMS = ("本机", "这台电脑", "我的电脑", "当前电脑", "local
 _LIVE_TERMS = ("现在", "当前", "查看", "检查", "运行", "进程", "端口", "占用")
 _DIAGNOSIS_TERMS = ("故障", "报错", "异常", "失败", "超时", "oom", "根因", "排查")
 _OPTIMIZATION_TERMS = ("优化", "调优", "降低占用", "提升性能", "怎么改", "清理")
+_CAPACITY_TERMS = (
+    "容量",
+    "性能分析",
+    "性能瓶颈",
+    "资源余量",
+    "容量规划",
+    "扩容预测",
+    "headroom",
+    "趋势分析",
+)
 _INSPECTION_TERMS = ("巡检", "健康检查", "全面检查", "有没有问题")
 _REVIEW_TERMS = ("复盘", "上次事故", "事故总结", "时间线")
 _EVAL_TERMS = ("评测", "评估模型", "benchmark", "回归测试")
@@ -51,6 +61,8 @@ def deterministic_understanding(raw_query: str) -> QueryUnderstanding:
         intents.append(WorkflowIntent.SYSTEM_INSPECTION)
     if _contains_any(text, _DIAGNOSIS_TERMS):
         intents.append(WorkflowIntent.FAULT_DIAGNOSIS)
+    if _contains_any(text, _CAPACITY_TERMS):
+        intents.append(WorkflowIntent.CAPACITY_PERFORMANCE)
     if _contains_any(text, _OPTIMIZATION_TERMS):
         intents.append(WorkflowIntent.OPTIMIZATION)
     if _contains_any(text, _LIVE_TERMS):
@@ -62,6 +74,7 @@ def deterministic_understanding(raw_query: str) -> QueryUnderstanding:
     priority = (
         WorkflowIntent.SYSTEM_INSPECTION,
         WorkflowIntent.FAULT_DIAGNOSIS,
+        WorkflowIntent.CAPACITY_PERFORMANCE,
         WorkflowIntent.OPTIMIZATION,
         WorkflowIntent.STATUS_QUERY,
         WorkflowIntent.INCIDENT_REVIEW,
@@ -75,6 +88,7 @@ def deterministic_understanding(raw_query: str) -> QueryUnderstanding:
         WorkflowIntent.SYSTEM_INSPECTION,
         WorkflowIntent.FAULT_DIAGNOSIS,
         WorkflowIntent.OPTIMIZATION,
+        WorkflowIntent.CAPACITY_PERFORMANCE,
     }
     remote_tokens = [token for token in _REMOTE_HINT.findall(text) if "." in token]
     missing: list[str] = []
@@ -101,6 +115,8 @@ def deterministic_understanding(raw_query: str) -> QueryUnderstanding:
         goals = ["确认故障作用域", "采集最小证据", "判断根因"]
     elif primary == WorkflowIntent.OPTIMIZATION:
         goals = ["建立当前资源基线", "识别优化机会", "生成带风险的优化计划"]
+    elif primary == WorkflowIntent.CAPACITY_PERFORMANCE:
+        goals = ["建立资源基线", "计算容量余量与性能瓶颈", "说明预测所需数据"]
     elif primary == WorkflowIntent.INCIDENT_REVIEW:
         goals = ["还原事故时间线", "总结根因与行动项"]
     else:
@@ -135,7 +151,7 @@ def deterministic_understanding(raw_query: str) -> QueryUnderstanding:
 _SYSTEM_PROMPT = """你是 AIOps 请求理解器。把用户请求改写为可执行但不扩大授权的任务。
 硬约束：
 1. raw_query 必须逐字保留用户原始输入；rewritten_query 只能澄清语义，不能新增写操作；
-2. 区分知识问答、实时状态、系统巡检、故障诊断、优化、复盘、评测；
+2. 区分知识问答、实时状态、系统巡检、故障诊断、只读优化、容量性能、复盘、评测；
 3. 现场查询必须确定 environment/resource/time range；缺失时 requires_confirmation=true；
 4. 涉及重启、停止、删除、修改、扩容、回滚时 risk_level=high 并要求确认；
 5. 把目标拆成 1-8 个明确 subtasks；只输出符合 schema 的 json。"""

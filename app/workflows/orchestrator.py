@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from app.workflows.capabilities import plan_capability
+from app.workflows.memory_policy import decide_memory_reads
 from app.workflows.models import (
     ConfirmationStatus,
+    MemoryContext,
     WorkflowPhase,
     WorkflowState,
     WorkflowTransition,
@@ -20,6 +23,13 @@ async def prepare_workflow(
 ) -> WorkflowState:
     understanding = await understand_query(raw_query, use_llm=use_llm)
     scope = resolve_scope(understanding)
+    capability = plan_capability(understanding)
+    memory_reads = decide_memory_reads(
+        intent=understanding.primary_intent,
+        session_id=session_id,
+        incident_id="",
+        service=scope.service,
+    )
     needs_confirmation = understanding.requires_confirmation or not scope.validated
     if not scope.validated and "目标环境或资源" not in understanding.missing_information:
         understanding.missing_information.append("目标环境或资源")
@@ -32,6 +42,13 @@ async def prepare_workflow(
     confirmation = ConfirmationStatus.REQUIRED if needs_confirmation else ConfirmationStatus.NOT_REQUIRED
     return WorkflowState(
         session_id=session_id,
+        capability_id=capability.capability.id,
+        execution_strategy=capability.capability.execution_strategy,
+        selected_skills=capability.selected_skills,
+        allowed_tools=capability.allowed_tools,
+        memory=MemoryContext(
+            read_decisions=[item.model_dump(mode="json") for item in memory_reads]
+        ),
         phase=target_phase,
         query=understanding,
         scope=scope,
@@ -45,4 +62,3 @@ async def prepare_workflow(
             )
         ],
     )
-
