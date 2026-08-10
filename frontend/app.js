@@ -128,6 +128,7 @@ function clearSkillHighlight() {
 let aiopsAbortController = null;   // 实时模式: SSE 中止器
 let aiopsPollTimer = null;         // 排队模式: 状态轮询定时器
 let aiopsActiveTaskId = null;      // 排队模式: 当前跟踪的 task_id
+let aiopsLifecycleState = null;    // 实时故障诊断后的人工事故闭环状态
 const aiopsSubmitModeButtons = document.querySelectorAll("[data-aiops-submit-mode]");
 let aiopsSubmitMode = "realtime";      // realtime(同步 SSE) | queue(提交排队)
 
@@ -259,6 +260,7 @@ async function runAiopsRealtime(query) {
     statusEl.textContent = "正在理解 Query...";
     setText("aiops-capability", "正在分析...");
     clearSkillHighlight();
+    aiopsLifecycleState = null;
     setAiopsRunning(true);
 
     aiopsAbortController = new AbortController();
@@ -477,6 +479,127 @@ function renderUnifiedFinalState(state, reportEl, statusEl) {
         outcome.report_markdown || outcome.summary || state.terminal_reason || "工作流已结束"
     );
     statusEl.textContent = state.phase === "completed" ? "完成 ✓" : "失败 ✗";
+    if (state.phase === "completed" && state.query?.primary_intent === "fault_diagnosis") {
+        aiopsLifecycleState = state;
+        renderIncidentLifecycle(reportEl);
+    }
+}
+
+async function postLifecycle(path, payload) {
+    const response = await fetch(`${API}/workflows/lifecycle/${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    const body = await response.json().catch(() => null);
+    if (!response.ok || body?.code !== "SUCCESS") {
+        throw new Error(body?.message || `事故闭环请求失败: HTTP ${response.status}`);
+    }
+    return body.data;
+}
+
+function renderIncidentLifecycle(reportEl) {
+    if (!aiopsLifecycleState) return;
+    reportEl.querySelector("#incident-lifecycle")?.remove();
+    const lifecycle = aiopsLifecycleState.lifecycle || {};
+    const stage = lifecycle.stage || "not_started";
+    const labels = {
+        not_started: "尚未启动",
+        awaiting_diagnosis_confirmation: "等待确认根因",
+        awaiting_plan_confirmation: "等待确认只读计划",
+        awaiting_verification: "等待恢复验证",
+        recovered: "恢复已验证",
+        not_recovered: "尚未恢复",
+        inconclusive: "验证不充分",
+        closed: "事故已关闭",
+    };
+    const actions = lifecycle.remediation?.actions || [];
+    const actionList = actions.length
+        ? `<ul>${actions.map((item) => `<li><strong>${escapeHtml(item.title || "")}</strong>：${escapeHtml(item.description || "")} <span class="lifecycle-risk">${item.execution_allowed ? "只读验证" : "仅建议，不执行"}</span></li>`).join("")}</ul>`
+        : "";
+    let button = '<button id="lifecycle-start" class="lifecycle-btn">启动事故闭环</button>';
+    if (stage === "awaiting_diagnosis_confirmation") {
+        button = '<button id="lifecycle-confirm-diagnosis" class="lifecycle-btn">确认 / 纠正根因</button>';
+    } else if (stage === "awaiting_plan_confirmation") {
+        button = '<button id="lifecycle-confirm-plan" class="lifecycle-btn">确认只读验证计划</button>';
+    } else if (["awaiting_verification", "not_recovered", "inconclusive"].includes(stage)) {
+        button = '<button id="lifecycle-verify" class="lifecycle-btn">采集新快照验证恢复</button>';
+    } else if (stage === "recovered") {
+        button = '<button id="lifecycle-close" class="lifecycle-btn">脱敏并关闭事故</button>';
+    } else if (stage === "closed") {
+        button = `<span class="lifecycle-closed">评测样本 ${escapeHtml(lifecycle.closure?.eval_sample_id || "已生成")}</span>`;
+    }
+    const panel = document.createElement("section");
+    panel.id = "incident-lifecycle";
+    panel.className = "incident-lifecycle";
+    panel.innerHTML = `
+        <div class="lifecycle-title">事故闭环 <span>${escapeHtml(labels[stage] || stage)}</span></div>
+        <p>系统只生成证据、建议与只读验证；不会自动重启、停止进程或修改配置。</p>
+        ${lifecycle.diagnosis?.proposed_root_cause ? `<div class="lifecycle-root"><strong>候选根因：</strong>${escapeHtml(lifecycle.diagnosis.proposed_root_cause)}</div>` : ""}
+        ${actionList}
+        ${lifecycle.verification?.summary ? `<div class="lifecycle-verification">${escapeHtml(lifecycle.verification.summary)}</div>` : ""}
+        <div class="lifecycle-actions">${button}</div>`;
+    reportEl.appendChild(panel);
+    bindIncidentLifecycleActions(reportEl);
+}
+
+function bindIncidentLifecycleActions(reportEl) {
+    const run = async (action) => {
+        const statusEl = document.getElementById("aiops-status");
+        statusEl.textContent = "事故闭环处理中...";
+        try {
+            await action();
+            renderIncidentLifecycle(reportEl);
+            statusEl.textContent = `事故闭环: ${aiopsLifecycleState.lifecycle?.stage || "已更新"}`;
+        } catch (error) {
+            statusEl.textContent = "事故闭环失败 ✗";
+            alert(error.message);
+        }
+    };
+    reportEl.querySelector("#lifecycle-start")?.addEventListener("click", () => run(async () => {
+        aiopsLifecycleState = await postLifecycle("initialize", { state: aiopsLifecycleState });
+    }));
+    reportEl.querySelector("#lifecycle-confirm-diagnosis")?.addEventListener("click", () => run(async () => {
+        const proposed = aiopsLifecycleState.lifecycle?.diagnosis?.proposed_root_cause || "";
+        const rootCause = window.prompt("请确认或纠正根因（可直接修改）", proposed);
+        if (rootCause === null || !rootCause.trim()) throw new Error("根因不能为空");
+        const decision = rootCause.trim() === proposed.trim() ? "confirmed" : "corrected";
+        aiopsLifecycleState = await postLifecycle("confirm-diagnosis", {
+            state: aiopsLifecycleState,
+            decision,
+            corrected_root_cause: decision === "corrected" ? rootCause.trim() : "",
+            note: "Web 人工确认",
+        });
+    }));
+    reportEl.querySelector("#lifecycle-confirm-plan")?.addEventListener("click", () => run(async () => {
+        if (!window.confirm("确认仅授权采集新的只读快照进行恢复验证？不会执行优化或处置。")) {
+            throw new Error("用户取消了计划确认");
+        }
+        aiopsLifecycleState = await postLifecycle("confirm-plan", {
+            state: aiopsLifecycleState,
+            decision: "confirmed",
+            note: "Web 人工确认只读验证计划",
+        });
+    }));
+    reportEl.querySelector("#lifecycle-verify")?.addEventListener("click", () => run(async () => {
+        aiopsLifecycleState = await postLifecycle("verify-recovery", { state: aiopsLifecycleState });
+    }));
+    reportEl.querySelector("#lifecycle-close")?.addEventListener("click", () => run(async () => {
+        const closedBy = window.prompt("请输入关闭人标识");
+        if (!closedBy?.trim()) throw new Error("关闭人不能为空");
+        const redactedQuery = window.prompt("请输入已脱敏的问题描述（不得包含主机名、IP、账号、密钥）");
+        if (!redactedQuery?.trim()) throw new Error("脱敏问题不能为空");
+        if (!window.confirm("确认内容已脱敏，并生成评测样本与候选知识？")) {
+            throw new Error("脱敏确认未通过");
+        }
+        const result = await postLifecycle("close", {
+            state: aiopsLifecycleState,
+            closed_by: closedBy.trim(),
+            redacted_query: redactedQuery.trim(),
+            redaction_passed: true,
+        });
+        aiopsLifecycleState = result.state;
+    }));
 }
 
 function handleAdaptiveWorkflowEvent(adaptive, planEl, stepsEl, reportEl, statusEl) {

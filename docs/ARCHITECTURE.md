@@ -43,6 +43,9 @@ Raw Query
        -> RAG Knowledge / Status / Inspection / Read-only Analysis
        -> Fast Triage -> Evidence Quality Gate -> Deep (按需)
     -> Evidence + Outcome
+    -> Human Diagnosis Confirmation
+    -> Read-only Remediation/Verification Plan Confirmation
+    -> Recovery Verification -> Close -> Memory/Eval Feedback
 ```
 
 关键不变量：
@@ -67,6 +70,15 @@ ToolCall 适配为 Scope Evidence，模型步骤只标为 reference，质量不�
 当前 Scope 不一致时直接阻断；数据源错误超过一半时先要求替代来源。V2 自适应入口已经接线；
 旧 `/aiops/diagnose` 为兼容仍保留显式 fast/deep 模式。远程自适应诊断在旧图尚未支持显式
 Scope 绑定前关闭式拒绝，目前只开放本机目标。
+
+故障诊断完成后，`app/workflows/incident_lifecycle.py` 管理独立的生命周期子状态：人工确认或
+纠正根因、确认只读验证计划、采集同 Scope 的新快照、验证恢复、脱敏关闭、生成评测样本并
+触发 Memory 晋升。恢复采集复用统一 `ToolCallEnvelope`、Budget、有限重试和 `FailureRecord`；
+关键数据源耗尽重试时进入 `inconclusive`。建议动作固定为不可执行，只有新快照采集属于允许的
+只读验证。Web UI 已接入这条人工闭环。
+
+当前生命周期状态通过 API 请求中的 `WorkflowState` 往返，尚未写入 Postgres，也没有处理多端
+并发版本冲突；因此它是可演示的状态机契约，不是完整的持久化事故管理实现。
 
 ```mermaid
 flowchart TD
@@ -108,6 +120,11 @@ flowchart TD
 
 两条路径复用 `app/orchestration/diagnosis_runner.py`，但后台路径会先把任务事实写入 Postgres，
 再通过 Redis Streams 交给 Worker。
+
+V2 统一工作流不复用上述提交入口。`background-eligibility` 会检查执行位置：本机现场能力必须
+交给绑定 `target_id` 的节点 Agent，不能由任意 Worker 执行；知识问答在语义上可后台化，但
+Capability Worker 适配器尚未落地。目标架构要求 Postgres 保存脱敏请求与状态事实，Redis 只传
+`task_id`、`incident_id` 和路由元数据，禁止复制完整 WorkflowState 作为事实来源。
 
 ## 3. fast 诊断图
 
@@ -269,5 +286,6 @@ API 和 Worker 使用同一个 Python 镜像，通过 Compose Command 区分角�
 - 限流在 Redis 故障时 fail-open，这是可用性优先的明确取舍，不等同于安全网关。
 - 缺少用户认证、多租户隔离和细粒度数据授权。
 - `requirements.txt` 使用范围依赖而非完整锁文件，部署复现性受上游发布影响。
+- V2 生命周期尚未持久化到 Postgres；统一 Capability Worker 和目标节点 Agent 尚未实现。
 
 这些限制应在具体需求出现时按风险逐项处理，不能通过一次大规模“整理”静默改写。

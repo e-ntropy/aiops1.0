@@ -138,7 +138,7 @@ gate; confirm credentials, cost, data scope, and service readiness first.
 | `app/agents/` | Fast graph nodes and deep specialist agents |
 | `app/diagnosis_graphs/` | Deep diagnosis graph assembly and evidence reduction |
 | `app/runtime/` | Agent harness, permissions, approvals, tool orchestration, budgets, and transitions |
-| `app/workflows/` | V2 capability planning/execution, query/scope/evidence contracts, adaptive diagnosis, read-only analysis, memory, fallbacks, and invariants |
+| `app/workflows/` | V2 capability planning/execution, query/scope/evidence contracts, adaptive diagnosis, read-only analysis, incident lifecycle, background eligibility, memory, fallbacks, and invariants |
 | `app/skills/` | Skill models, loader, registry, playbooks, and Skill documentation |
 | `app/tools/`, `mcp_servers/` | Tool metadata, local tools, and external MCP process boundaries |
 | `app/incidents/`, `app/evidence/`, `app/db/` | Incident, evidence, persistence, and schema ownership |
@@ -174,6 +174,8 @@ are the compact boundaries an agent must preserve while editing:
 - Tool execution must retain the Skill, permission, guardrail, approval, and
   audit boundaries. Read-only tools may be added by runtime policy; write,
   notification, and high-risk tools require explicit authorization.
+- Local-host V2 workflows require target execution affinity. Do not enqueue them
+  to an arbitrary Worker whose local system is a different evidence target.
 - `PERMISSION_MODE=bypass` is development-only. Do not recommend it for a public
   or production deployment.
 - Retryable side effects require idempotency or an explicit uncertain-outcome

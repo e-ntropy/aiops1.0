@@ -490,3 +490,13 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--a
 .approval-btn-allow:hover { background: var(--surface-alt); border-color: var(--st-success); }
 .approval-btn-deny  { color: var(--st-failed); }
 .approval-btn-deny:hover { background: var(--surface-alt); border-color: var(--st-failed); }
+
+/* 实时故障诊断后的人工事故闭环 */
+.incident-lifecycle { margin-top: 24px; padding: 14px; border: 1px solid var(--hairline); border-left: 3px solid var(--accent); background: var(--surface-alt); }
+.lifecycle-title { display: flex; justify-content: space-between; gap: 12px; font-weight: var(--fw-strong); color: var(--text-primary); }
+.lifecycle-title span, .lifecycle-risk { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); }
+.lifecycle-root, .lifecycle-verification { margin: 8px 0; padding: 8px; border: 1px solid var(--hairline); background: var(--surface); }
+.lifecycle-actions { margin-top: 10px; }
+.lifecycle-btn { padding: 7px 12px; border: 1px solid var(--accent); background: var(--surface); color: var(--accent); cursor: pointer; font-size: 12px; font-weight: var(--fw-medium); }
+.lifecycle-btn:hover { background: var(--accent-weak); }
+.lifecycle-closed { color: var(--st-success); font-family: var(--font-mono); font-size: 11px; }

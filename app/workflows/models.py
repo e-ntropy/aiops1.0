@@ -69,6 +69,74 @@ class WorkflowPhase(StrEnum):
     CANCELLED = "cancelled"
 
 
+class LifecycleStage(StrEnum):
+    NOT_STARTED = "not_started"
+    AWAITING_DIAGNOSIS_CONFIRMATION = "awaiting_diagnosis_confirmation"
+    AWAITING_PLAN_CONFIRMATION = "awaiting_plan_confirmation"
+    AWAITING_VERIFICATION = "awaiting_verification"
+    RECOVERED = "recovered"
+    NOT_RECOVERED = "not_recovered"
+    INCONCLUSIVE = "inconclusive"
+    CLOSED = "closed"
+
+
+class HumanDecisionStatus(StrEnum):
+    PENDING = "pending"
+    CONFIRMED = "confirmed"
+    CORRECTED = "corrected"
+    REJECTED = "rejected"
+
+
+class DiagnosisConfirmation(BaseModel):
+    status: HumanDecisionStatus = HumanDecisionStatus.PENDING
+    proposed_root_cause: str = ""
+    confirmed_root_cause: str = ""
+    note: str = ""
+    decided_at: datetime | None = None
+
+
+class RemediationAction(BaseModel):
+    id: str = Field(default_factory=lambda: f"act_{uuid4().hex[:12]}")
+    title: str
+    action_kind: str = Field(pattern="^(observe|verify|recommendation)$")
+    description: str
+    risk_level: RiskLevel = RiskLevel.READ_ONLY
+    execution_allowed: bool = False
+    requires_human_confirmation: bool = False
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class RemediationPlanState(BaseModel):
+    status: HumanDecisionStatus = HumanDecisionStatus.PENDING
+    actions: list[RemediationAction] = Field(default_factory=list)
+    note: str = ""
+    decided_at: datetime | None = None
+
+
+class RecoveryVerificationState(BaseModel):
+    status: LifecycleStage = LifecycleStage.NOT_STARTED
+    baseline_evidence_id: str = ""
+    verification_evidence_id: str = ""
+    summary: str = ""
+    checked_at: datetime | None = None
+
+
+class IncidentClosureState(BaseModel):
+    closed: bool = False
+    closed_at: datetime | None = None
+    closed_by: str = ""
+    redaction_passed: bool = False
+    eval_sample_id: str = ""
+
+
+class IncidentLifecycleState(BaseModel):
+    stage: LifecycleStage = LifecycleStage.NOT_STARTED
+    diagnosis: DiagnosisConfirmation = Field(default_factory=DiagnosisConfirmation)
+    remediation: RemediationPlanState = Field(default_factory=RemediationPlanState)
+    verification: RecoveryVerificationState = Field(default_factory=RecoveryVerificationState)
+    closure: IncidentClosureState = Field(default_factory=IncidentClosureState)
+
+
 class QuerySubtask(BaseModel):
     id: str = Field(default_factory=lambda: f"sub_{uuid4().hex[:12]}")
     objective: str = Field(min_length=1, max_length=500)
@@ -233,6 +301,7 @@ class WorkflowState(BaseModel):
     budgets: ExecutionBudget = Field(default_factory=ExecutionBudget)
     memory: MemoryContext = Field(default_factory=MemoryContext)
     outcome: WorkflowOutcome = Field(default_factory=WorkflowOutcome)
+    lifecycle: IncidentLifecycleState = Field(default_factory=IncidentLifecycleState)
     transitions: list[WorkflowTransition] = Field(default_factory=list)
     terminal_reason: str = ""
 

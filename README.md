@@ -47,6 +47,7 @@ V2 重构在其上提供统一 Capability Planner，将 Fast/Deep 合并为按�
 | 自适应故障诊断 | Fast Triage 先取最小证据，Evidence Gate 不满足时保留证据升级 Deep |
 | 只读优化助手 | 基于快照生成优化建议、风险和人工确认要求，不执行任何变更 |
 | 容量与性能分析 | 计算当前 Headroom；缺历史序列时禁止伪造容量预测 |
+| 人工事故闭环 | 确认/纠正根因 → 确认只读计划 → 新快照验证恢复 → 脱敏关闭并生成评测样本 |
 | Skill-first 诊断 | 先选择主机资源、网络、容器或通用 OnCall Playbook，再收窄工具范围 |
 | fast / deep 双模式 | fast 走 Plan-Execute-Replan；deep 走隔离专业 Agent 的证据图 |
 | 后台任务链路 | API 快速落库和入队，多个 Worker 通过 Redis Streams 后台消费 |
@@ -236,6 +237,12 @@ python scripts/mock_alert.py --list-history
 | V2 Evidence Quality Gate | POST | `/api/v1/workflows/assess-evidence` |
 | V2 自适应诊断（SSE） | POST | `/api/v1/workflows/adaptive-diagnosis/stream` |
 | V2 只读优化/容量分析 | POST | `/api/v1/workflows/execute-readonly-analysis` |
+| V2 后台执行资格检查 | POST | `/api/v1/workflows/background-eligibility` |
+| V2 初始化事故闭环 | POST | `/api/v1/workflows/lifecycle/initialize` |
+| V2 人工确认诊断 | POST | `/api/v1/workflows/lifecycle/confirm-diagnosis` |
+| V2 人工确认只读计划 | POST | `/api/v1/workflows/lifecycle/confirm-plan` |
+| V2 恢复验证 | POST | `/api/v1/workflows/lifecycle/verify-recovery` |
+| V2 脱敏关闭事故 | POST | `/api/v1/workflows/lifecycle/close` |
 | Skill 列表 | GET | `/api/v1/skills` |
 | 上传知识文档 | POST | `/api/v1/documents/upload` |
 | 就绪检查 | GET | `/api/v1/health/ready` |
@@ -259,6 +266,15 @@ V2 本机巡检采用两步调用：先把“查看本机后台进程和内存�
 推荐的新入口是两步调用：先向 `prepare` 提交原始 Query；若返回 `clarifying`，通过 `clarify`
 补齐目标；状态为 `ready` 后把完整 State 交给 `execute/stream`。统一执行器按 `capability_id`
 委托已有 RAG、系统巡检、Fast/Deep 或只读分析模块，前端无需直接选择内部 Agent。
+
+实时故障诊断完成后，Web UI 会显示事故闭环面板。根因和计划必须人工确认；恢复状态由同一
+`TargetScope` 的新结构化快照与诊断基线比较得出，采集失败时结果为 `inconclusive`，不会根据
+报告文字宣称恢复。关闭前需要人工提供脱敏描述，之后才生成评测样本并把经验晋升为
+`verified_knowledge` 候选。
+
+旧 `/aiops/diagnose/submit` 队列仍服务 V3 诊断任务。V2 统一工作流尚未直接入队：本机 Scope
+必须绑定目标节点，普通 Worker 会检查到自身容器。`background-eligibility` 会在目标 Agent、
+事实持久化和 Capability Worker 适配器完成前关闭式拒绝提交。
 
 ## 项目结构
 
