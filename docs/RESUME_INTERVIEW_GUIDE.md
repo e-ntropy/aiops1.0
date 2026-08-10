@@ -3,6 +3,7 @@
 > 适用岗位：Agent/LLM 应用开发、RAG 工程、AI 平台开发、AIOps/SRE 平台开发。  
 > 表述原则：以真实代码和评测报告为依据，按个人项目负责人视角讲解，不冒充生产经历。  
 > 深入学习见：[项目技术学习手册](PROJECT_TECHNICAL_LEARNING.md)。
+> 今日重构闭环见：[2026-08-10 重构方案、流程与成果](REFACTOR_20260810_SUMMARY.md)。
 
 ## 1. 项目在简历中的定位
 
@@ -15,12 +16,12 @@
 传统 OnCall 排障依赖人工在指标、日志、容器状态和 SOP 之间反复切换；普通 RAG 问答只能回答
 “文档怎么说”，不能动态调用工具、根据证据调整计划，也缺乏副作用控制和最终诊断指标。
 
-项目面向 SRE/OnCall 场景，将用户描述或 Alertmanager 告警转化为诊断任务，通过 Skill Router
-选择 Playbook，使用 LangGraph 编排 Fast/Deep 两类 Agent，结合 RAG 与 MCP 工具收集证据，
-并通过 Redis Streams、Postgres 和权限审批结构形成可追溯诊断链路。
+项目面向 SRE/OnCall 场景，将用户描述或 Alertmanager 告警转化为结构化 Query、Scope 与 Capability，
+通过 Skill Router 选择 Playbook，使用 LangGraph 执行 Evidence Gate 驱动的自适应诊断，结合 RAG 与
+MCP 工具收集证据，并通过人工确认、恢复验证、Memory 和分层评测形成完整事故生命周期。
 
-项目工作的核心是完成从告警接入、任务调度、Agent 诊断、RAG/工具取证到证据审计和报告生成的
-完整链路，并通过分层 Benchmark 验证路由、检索、生成和最终根因质量。
+项目工作的核心是完成从告警接入、任务调度、Agent 诊断、RAG/工具取证，到人工确认、恢复验证、
+事故关闭和经验评测沉淀的完整链路，并通过分层 Benchmark 验证流程、安全、证据和最终根因质量。
 
 ### 1.3 技术栈
 
@@ -44,7 +45,7 @@ Docker Compose
 2. 能画出 Redis Streams、Worker、Postgres 和执行槽的关系。
 3. 能手算 RRF、MRR、group recall 和 citation correctness。
 4. 能解释每个安全边界为什么不能只依赖 Prompt。
-5. 能承认当前 Deep 数据源污染、Reranker 兼容性和测试覆盖等已知限制。
+5. 能解释历史 Deep 数据源污染如何被离线夹具门禁约束，以及真实远程 Evidence Provider 仍缺什么。
 
 简历可以突出你对完整项目的设计、实现和验证能力，但不要虚构生产用户、线上事故、团队规模、
 业务收入或不存在的性能数据。对确实不是亲自完成的代码，应先通过复现、修改和讲解把它转化为
@@ -59,44 +60,57 @@ Docker Compose
 **技术栈：** Python、LangGraph/LangChain、FastAPI/SSE、Milvus、BM25/RRF、
 Redis Streams、PostgreSQL、MCP、RAGAS、Docker
 
-**项目背景与目标：** 针对 SRE/OnCall 需人工跨指标、日志和 Runbook 排障，且普通 RAG
-无法动态取证的问题，设计多智能体诊断平台，自动完成 Playbook 选择、工具取证、根因分析
-与可审计报告生成。
+**项目背景与目标：** 针对 SRE/OnCall 需人工跨指标、日志和 Runbook 排障，且普通 RAG 无法查询
+现场状态、验证恢复的问题，设计从 Query 理解、真实取证、故障诊断到人工关闭和持续评测的 AIOps
+智能诊断平台。
 
 **主要工作与成效：**
 
-- **受控 Agent 编排：** 针对单 Agent 计划漂移与复杂取证不全，基于 LangGraph 设计
-  Fast/Deep 双状态图：Fast 执行 Skill Router → Plan-Execute-Replan，Deep 并行调度
-  四类专业 Agent；仅汇聚结构化 Evidence，以预算终止和 fallback 约束执行闭环。
-- **Skill 按需路由：** 针对全量注入 Playbook/工具产生的上下文噪声，设计“元数据路由
-  → Playbook/工具按需加载”的渐进式披露，并增加 OOS fallback、重路由上限及
-  PermissionMode/Guardrail；40 条 Router 集总体准确率 75.0%，OOS 识别 5/5。
+- **统一业务闭环：** 针对知识问答、现场查询、Fast/Deep 诊断和事故关闭状态割裂，设计
+  Query Understanding → Scope → Capability → Evidence → Outcome 统一契约；将 Fast/Deep
+  合并为 Evidence Gate 驱动的自适应诊断，并补齐人工根因确认、同 Scope 恢复验证、脱敏关闭及
+  Memory/Evaluation 闭环。
+- **Evidence 安全治理：** 针对 E2E 中真实宿主机 CPU/内存污染合成事故，为 Observed Evidence
+  建立 Scope、受信 ToolCall ID、fixture 三元绑定与畸形输入 fail-closed；构建 16 条正常/边界、
+  正例/反例/未知、简单/复杂夹具，当前 Isolation 与 Exact Match 均为 16/16。
+- **Skill 与权限收敛：** 采用“Skill 元数据路由 → Playbook/工具按需加载”，将数据库/缓存、应用
+  运行时、消息队列专科 Skill 与 Runbook 纳入诊断，内置 Skill 从 4 个扩展至 7 个；通过 ToolMeta
+  测试发现并移除默认 `docker_restart` 权限，所有内置 Skill 默认工具均为只读。
 - **Hybrid RAG 提质：** 针对纯向量检索遗漏关键词、小分块语义不完整，设计
   Parent-Child 分块与 Milvus child 召回，按 `parent_id` 返回父上下文并经 BM25+RRF
   融合；50 条检索集 hit@3 由 0.800 提升至 0.860（+6.0pp），MRR@3 提升 0.067。
 - **可靠任务运行时：** 针对突发告警下任务丢失和多 Worker 放大模型成本，以 Postgres
   保存任务事实，Redis Streams 实现 Pending 回收、重试/DLQ，并用 Redis 租约槽限制
   诊断并发；8/8 个 Worker 任务成功，峰值严格受限于 2/2。
-- **业务闭环评测：** 针对“检索命中不等于诊断正确”，构建 Router、Retrieval、
-  RAGAS、Fast/Deep E2E 四层 160 个样本-模式评测，覆盖根因 Top-1、引用、延迟和 Token；
-  faithfulness 0.869、groundedness 0.958，并定位证据作用域污染问题。
+- **分层评测门禁：** 针对“产生报告不等于流程正确”，新增 32 条 Query、9 条 Lifecycle 和
+  16 条 Diagnosis Fixture 纯离线回归，覆盖多意图、越权、Prompt Injection、数据源失败、人工拒绝
+  与 Deep 降级；固定数据集 SHA-256 和发布阈值，当前三套小型数据集均 100% 通过。
 
 ### 2.2 空间不足时的四点压缩版
 
-- **受控 Agent 编排：** 针对单 Agent 计划漂移与上下文膨胀，基于 LangGraph 实现
-  Plan-Execute-Replan 和四专业 Agent 并行取证双图，以结构化 Evidence 和预算/fallback
-  约束执行闭环。
-- **Skill 与 RAG 提质：** 通过 Skill 元数据 → Playbook/工具按需加载降低上下文噪声，
-  并构建 Parent-Child + Milvus/BM25/RRF；50 条检索集 hit@3 由 0.800 提升至
-  0.860（+6.0pp）。
+- **自适应诊断闭环：** 设计 Query/Scope/Capability/WorkflowState 统一契约，将 Fast/Deep 合并为
+  Evidence Gate 驱动的自适应诊断，并串联人工根因确认、恢复验证、事故关闭和 Memory 沉淀。
+- **证据与权限治理：** 建立 Observed Evidence 的 Scope/ToolCall/fixture 三元绑定和 fail-closed，
+  修复真实宿主机污染合成事故；内置 Skill 从 4 个扩展至 7 个，并移除默认容器重启权限。
 - **可靠任务运行时：** 针对突发告警与昂贵模型并发，以 Postgres 保存任务事实、
   Redis Streams 实现 Pending 回收/重试/DLQ，并用租约槽将诊断并发限制为 2；
   8/8 个 Worker 任务成功。
-- **诊断质量闭环：** 构建 Router/Retrieval/RAGAS/Diagnosis E2E 四层 160 个
-  样本-模式评测，faithfulness 0.869、groundedness 0.958，并通过 Top-1 与引用指标
-  定位证据作用域污染。
+- **诊断质量闭环：** 构建 32 Query + 9 Lifecycle + 16 Diagnosis Fixture 的版本化离线门禁，
+  覆盖正常/边界、正反例、越权和失败降级；当前小型数据集均 100% 通过，Evidence Isolation 16/16。
 
-### 2.3 不应出现在简历中的说法
+### 2.3 STAR 映射（用于面试展开）
+
+- **S（Situation）：** 原项目已有 Fast/Deep、RAG、MCP 和队列，但入口与状态割裂，知识回答、真实
+  状态查询、诊断和事故关闭没有闭环；E2E 还发现合成事故被真实宿主机 CPU/内存污染。
+- **T（Task）：** 复用既有模块，建立 Query → Scope → Capability → Evidence → RCA → 人工确认 →
+  恢复验证 → Memory/Evaluation 的完整生命周期，并让越权、工具失败和证据格式异常可控降级。
+- **A（Action）：** 统一 WorkflowState 和 Query/Scope 契约，以 Evidence Gate 合并 Fast/Deep；为
+  Observed Evidence 建立 Scope/ToolCall/fixture 绑定；补齐 HITL 生命周期、7 个只读 Skill 以及
+  32 Query + 9 Lifecycle + 16 Diagnosis Fixture 的版本化回归。
+- **R（Result）：** 形成从咨询到关闭再到持续评测的产品闭环；当前三套小型离线数据集均通过门禁，
+  Evidence Isolation 16/16，Skill 从 4 个扩展至 7 个，并移除默认容器重启权限。
+
+### 2.4 不应出现在简历中的说法
 
 - 生产级 AIOps 平台；
 - 零幻觉；
@@ -111,10 +125,10 @@ Redis Streams、PostgreSQL、MCP、RAGAS、Docker
 ### 3.1 30 秒版本
 
 > 我做的是一个面向 SRE/OnCall 的 Multi-Agent AIOps 个人项目。系统先通过 Skill Router
-> 选择排障 Playbook，再走 Fast 的 Plan-Execute-Replan 或 Deep 的四专业 Agent 并行取证，
-> 结合 Milvus Hybrid RAG 和 MCP 工具生成证据报告。后台使用 Redis Streams 削峰，
-> Postgres 保存任务、工具调用和 Evidence，工具执行由 PermissionMode 和人工审批控制。
-> 最后通过路由、检索、RAGAS 和根因指标验证整条链路，而不是只展示几条成功 Demo。
+> 选择排障 Playbook，Fast Triage 先收集最小证据，Evidence Gate 不满足时保留证据升级 Deep，
+> 再经过人工根因确认、同 Scope 恢复验证和事故关闭。系统用 Milvus Hybrid RAG、MCP、Redis Streams
+> 和 Postgres 支撑知识、工具与事实链路，并用 57 条纯离线契约/夹具回归约束 Scope、权限、降级和
+> Evidence 隔离，而不是只展示几条成功 Demo。
 
 ### 3.2 两分钟版本
 
@@ -130,8 +144,10 @@ Redis Streams、PostgreSQL、MCP、RAGAS、Docker
 > Hybrid hit@3 比纯向量提高 6 个百分点。为了避免只看检索指标，我又补齐了 Router、
 > 全量 RAGAS 和最终诊断评测。RAGAS 50 条 faithfulness 是 0.869，而不是早期 5 条样本的
 > 1.0。端到端评测则发现 Fast Top-1 50%，Deep 0%；Deep 虽然引用 ID 全有效，但观测对象
-> 错了。这个项目让我形成的核心认识是：Agent 评测必须覆盖最终业务结论，Evidence 还必须绑定
-> resource、environment 和 time range。
+> 错了。基于这个问题，我把 Query、Scope、Capability、Evidence 和生命周期统一到 WorkflowState，
+> 将 Fast/Deep 改为 Evidence Gate 驱动的自适应诊断，并为 Observed Evidence 增加 Scope、ToolCall ID
+> 和 fixture 绑定。当前 32 条 Query、9 条 Lifecycle 和 16 条事故夹具均通过离线门禁，隔离检查
+> 16/16；但这只证明确定性契约，真实远程 Evidence Provider 和生产事故 Gold 仍是下一步。
 
 ## 4. 亮点二：Fast/Deep 双 Agent 图与 Evidence 架构
 

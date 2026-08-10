@@ -304,6 +304,8 @@ V2 本机巡检采用两步调用：先把“查看本机后台进程和内存�
 - [系统架构与已知限制](docs/ARCHITECTURE.md)
 - [项目技术学习手册](docs/PROJECT_TECHNICAL_LEARNING.md)
 - [简历项目介绍与面试问答](docs/RESUME_INTERVIEW_GUIDE.md)
+- [2026-08-10 重构方案、流程与成果](docs/REFACTOR_20260810_SUMMARY.md)
+- [重构 STAR 问题与结果日志](docs/REFACTOR_STAR_LOG.md)
 - [Skill 层与扩展方式](app/skills/README.md)
 - [Benchmark 使用说明](benchmark/README.md)
 - [AIOps 分层评测策略](docs/EVALUATION_STRATEGY.md)
