@@ -1,0 +1,40 @@
+{"id":"skill-01","input":"我电脑很卡，CPU一直100%","expected_skill":"host_resource_diagnosis","scenario":"本机资源","difficulty":"easy"}
+{"id":"skill-02","input":"我的笔记本内存占用很高，风扇一直转","expected_skill":"host_resource_diagnosis","scenario":"本机资源","difficulty":"easy"}
+{"id":"skill-03","input":"这台机器磁盘满了怎么办","expected_skill":"host_resource_diagnosis","scenario":"本机资源","difficulty":"easy"}
+{"id":"skill-04","input":"localhost的CPU使用率一直在90%以上","expected_skill":"host_resource_diagnosis","scenario":"本机资源","difficulty":"easy"}
+{"id":"skill-05","input":"我电脑卡顿 内存快满了 有什么办法","expected_skill":"host_resource_diagnosis","scenario":"本机资源","difficulty":"easy"}
+{"id":"skill-06","input":"网站打不开了返回502错误","expected_skill":"network_diagnosis","scenario":"网络故障","difficulty":"easy"}
+{"id":"skill-07","input":"www.example.com无法访问，帮我排查","expected_skill":"network_diagnosis","scenario":"网络故障","difficulty":"easy"}
+{"id":"skill-08","input":"DNS解析失败 ping不通域名","expected_skill":"network_diagnosis","scenario":"网络故障","difficulty":"easy"}
+{"id":"skill-09","input":"端口8080连不上了","expected_skill":"network_diagnosis","scenario":"网络故障","difficulty":"easy"}
+{"id":"skill-10","input":"HTTPS证书过期导致接口访问失败","expected_skill":"network_diagnosis","scenario":"网络故障","difficulty":"medium"}
+{"id":"skill-11","input":"Docker容器mysql-prod一直在重启","expected_skill":"container_diagnosis","scenario":"容器异常","difficulty":"easy"}
+{"id":"skill-12","input":"docker ps看到container状态是restarting","expected_skill":"container_diagnosis","scenario":"容器异常","difficulty":"easy"}
+{"id":"skill-13","input":"容器日志报错 exited with code 137","expected_skill":"container_diagnosis","scenario":"容器异常","difficulty":"easy"}
+{"id":"skill-14","input":"Docker overlay2磁盘占用100%了","expected_skill":"container_diagnosis","scenario":"容器异常","difficulty":"medium"}
+{"id":"skill-15","input":"docker compose up启动失败报exit code 1","expected_skill":"container_diagnosis","scenario":"容器异常","difficulty":"medium"}
+{"id":"skill-16","input":"Redis内存使用率98%客户端连接被断开","expected_skill":"generic_oncall","scenario":"Redis告警","difficulty":"medium"}
+{"id":"skill-17","input":"MySQL主从复制延迟Seconds_Behind_Master持续增长","expected_skill":"generic_oncall","scenario":"MySQL告警","difficulty":"medium"}
+{"id":"skill-18","input":"Kubernetes Pod OOMKilled Exit Code 137","expected_skill":"generic_oncall","scenario":"K8s告警","difficulty":"medium"}
+{"id":"skill-19","input":"Kafka consumer lag突然增大到10万","expected_skill":"generic_oncall","scenario":"Kafka告警","difficulty":"medium"}
+{"id":"skill-20","input":"Nginx 502 Bad Gateway upstream超时","expected_skill":"generic_oncall","scenario":"Nginx告警","difficulty":"medium"}
+{"id":"skill-21","input":"服务报5xx错误率升高","expected_skill":"generic_oncall","scenario":"通用告警","difficulty":"medium"}
+{"id":"skill-22","input":"接口响应P99延迟从100ms涨到2s","expected_skill":"generic_oncall","scenario":"通用告警","difficulty":"medium"}
+{"id":"skill-23","input":"JVM Full GC频繁 Old区不下","expected_skill":"generic_oncall","scenario":"JVM告警","difficulty":"medium"}
+{"id":"skill-24","input":"服务器load average飙升到20","expected_skill":"generic_oncall","scenario":"通用告警","difficulty":"medium"}
+{"id":"skill-25","input":"数据库连接池耗尽导致接口超时","expected_skill":"generic_oncall","scenario":"通用告警","difficulty":"medium"}
+{"id":"skill-26","input":"今天天气怎么样","expected_skill":"OUT_OF_SCOPE","scenario":"边界case","difficulty":"easy"}
+{"id":"skill-27","input":"推荐一部好看的电影","expected_skill":"OUT_OF_SCOPE","scenario":"边界case","difficulty":"easy"}
+{"id":"skill-28","input":"帮我写一个Python脚本","expected_skill":"OUT_OF_SCOPE","scenario":"边界case","difficulty":"medium"}
+{"id":"skill-29","input":"什么是Kubernetes","expected_skill":"OUT_OF_SCOPE","scenario":"边界case","difficulty":"medium"}
+{"id":"skill-30","input":"今天吃什么好","expected_skill":"OUT_OF_SCOPE","scenario":"边界case","difficulty":"easy"}
+{"id":"skill-31","input":"我的电脑运行很慢内存占用高","expected_skill":"host_resource_diagnosis","scenario":"模糊边界","difficulty":"medium"}
+{"id":"skill-32","input":"服务访问不了是不是网络问题","expected_skill":"network_diagnosis","scenario":"模糊边界","difficulty":"medium"}
+{"id":"skill-33","input":"docker容器端口映射不对导致访问失败","expected_skill":"container_diagnosis","scenario":"模糊边界","difficulty":"hard"}
+{"id":"skill-34","input":"node_exporter指标采集不到了","expected_skill":"generic_oncall","scenario":"Prometheus","difficulty":"hard"}
+{"id":"skill-35","input":"alertmanager没发告警通知","expected_skill":"generic_oncall","scenario":"Prometheus","difficulty":"hard"}
+{"id":"skill-36","input":"我的笔记本内存高CPU风扇狂转怎么排查","expected_skill":"host_resource_diagnosis","scenario":"中英混杂","difficulty":"easy"}
+{"id":"skill-37","input":"localhost disk usage > 90% how to clean","expected_skill":"host_resource_diagnosis","scenario":"中英混杂","difficulty":"medium"}
+{"id":"skill-38","input":"MySQL Too many connections max_connections reached","expected_skill":"generic_oncall","scenario":"中英混杂","difficulty":"medium"}
+{"id":"skill-39","input":"redis-cli INFO memory shows used_memory > maxmemory","expected_skill":"generic_oncall","scenario":"中英混杂","difficulty":"medium"}
+{"id":"skill-40","input":"err connection refused怎么解决","expected_skill":"network_diagnosis","scenario":"中英混杂","difficulty":"medium"}
