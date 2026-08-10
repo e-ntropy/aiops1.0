@@ -39,7 +39,8 @@ Raw Query
     -> TargetScope (environment/resource/time range)
     -> WorkflowState (统一 Evidence、Failure、Budget、Memory、Transition)
     -> Local Read-only Inspection (结构化快照、固定阈值、ToolCall 审计)
-    -> Evidence + Outcome (是否升级故障诊断)
+    -> Evidence Quality Gate (结束 / 补证 / 升级 Deep / 阻断)
+    -> Evidence + Outcome
 ```
 
 关键不变量：
@@ -57,6 +58,11 @@ Raw Query
 超时按 Budget 有限重试，关键数据源耗尽重试后转为 `failed`，不会由模型补写现场结论。
 后续里程碑会把现有 Fast 改造成 Triage，
 并把 Deep 专业 Agent 改造成 Evidence Quality Gate 后的按需升级路径。
+
+当前 `POST /api/v1/workflows/assess-evidence` 已实现确定性质量门契约。异常或故障只有单一
+现场来源时生成 Deep 子 Run 计划，并保留父 `run_id` 和已有 Evidence ID；现场 Evidence 与
+当前 Scope 不一致时直接阻断；数据源错误超过一半时先要求替代来源。旧 `/aiops/diagnose`
+仍按显式 fast/deep 模式运行，尚未接入自动升级，这是 M3 后续接线任务而非已完成功能。
 
 ```mermaid
 flowchart TD

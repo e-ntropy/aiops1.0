@@ -223,6 +223,7 @@ python scripts/mock_alert.py --list-history
 | V2 请求理解与任务拆分 | POST | `/api/v1/workflows/prepare` |
 | V2 二次确认 | POST | `/api/v1/workflows/clarify` |
 | V2 本机只读巡检 | POST | `/api/v1/workflows/execute-local-inspection` |
+| V2 Evidence Quality Gate | POST | `/api/v1/workflows/assess-evidence` |
 | Skill 列表 | GET | `/api/v1/skills` |
 | 上传知识文档 | POST | `/api/v1/documents/upload` |
 | 就绪检查 | GET | `/api/v1/health/ready` |
@@ -239,6 +240,9 @@ V2 本机巡检采用两步调用：先把“查看本机后台进程和内存�
 `phase=ready` 且 `scope.kind=local_host` 的完整 State；再把该 State 提交给
 `execute-local-inspection`。结果包含结构化系统快照、阈值发现、Top 进程、ToolCall 执行状态、
 带 Scope 的 Evidence 和下一步建议。接口只读，不采集进程命令行或环境变量，也不会自动结束进程。
+`assess-evidence` 再依据现场证据数量、来源多样性、错误比例、Scope 一致性、异常信号和根因
+置信度，确定性返回 `complete / collect_more / escalate_deep / blocked`；升级计划保留父 Run 与
+已有 Evidence ID，避免 Fast 与 Deep 重复丢失上下文。
 
 ## 项目结构
 

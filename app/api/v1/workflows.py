@@ -5,6 +5,10 @@ from pydantic import BaseModel, Field
 
 from app.schemas.common import ApiResponse
 from app.workflows.clarification import apply_clarification
+from app.workflows.evidence_quality import (
+    EvidenceQualityAssessment,
+    assess_evidence_quality,
+)
 from app.workflows.models import WorkflowState
 from app.workflows.orchestrator import prepare_workflow
 from app.workflows.system_inspection import (
@@ -66,3 +70,21 @@ async def execute_inspection(
     result = await execute_local_inspection(body.state)
     message = "巡检完成" if result.state.phase.value == "completed" else "关键数据源不可用"
     return ApiResponse.success(result, message=message)
+
+
+class EvidenceQualityRequest(BaseModel):
+    state: WorkflowState
+    anomaly_detected: bool | None = None
+    root_cause_confidence: float | None = Field(default=None, ge=0, le=1)
+
+
+@router.post("/assess-evidence", summary="评估证据质量并决定是否升级 Deep 诊断")
+async def assess_evidence(
+    body: EvidenceQualityRequest,
+) -> ApiResponse[EvidenceQualityAssessment]:
+    assessment = assess_evidence_quality(
+        body.state,
+        anomaly_detected=body.anomaly_detected,
+        root_cause_confidence=body.root_cause_confidence,
+    )
+    return ApiResponse.success(assessment, message=f"证据路由: {assessment.decision.value}")

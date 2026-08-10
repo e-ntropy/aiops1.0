@@ -138,7 +138,7 @@ gate; confirm credentials, cost, data scope, and service readiness first.
 | `app/agents/` | Fast graph nodes and deep specialist agents |
 | `app/diagnosis_graphs/` | Deep diagnosis graph assembly and evidence reduction |
 | `app/runtime/` | Agent harness, permissions, approvals, tool orchestration, budgets, and transitions |
-| `app/workflows/` | V2 query understanding, intent/scope/evidence contracts, clarification loop, local read-only inspection, memory policy, fallbacks, and workflow invariants |
+| `app/workflows/` | V2 query understanding, intent/scope/evidence contracts, clarification, local inspection, evidence quality routing, memory policy, fallbacks, and invariants |
 | `app/skills/` | Skill models, loader, registry, playbooks, and Skill documentation |
 | `app/tools/`, `mcp_servers/` | Tool metadata, local tools, and external MCP process boundaries |
 | `app/incidents/`, `app/evidence/`, `app/db/` | Incident, evidence, persistence, and schema ownership |
