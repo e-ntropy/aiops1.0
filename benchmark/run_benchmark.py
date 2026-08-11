@@ -825,6 +825,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Fail when fixture identity or approved thresholds regress",
     )
+
+    for name, help_text in (
+        ("memory", "Run paired no/flat/governed Memory benchmark"),
+        ("tool", "Run Tool Envelope and fallback safety benchmark"),
+    ):
+        subparser = sub.add_parser(name, help=help_text)
+        subparser.add_argument("--limit", type=int, default=None)
+        subparser.add_argument("--ids", type=str, default=None)
+        subparser.add_argument("--output", type=str, default=None)
+        subparser.add_argument("--baseline", type=str, default=None)
+        subparser.add_argument("--enforce", action="store_true")
     return parser
 
 
@@ -844,6 +855,14 @@ async def amain() -> None:
         )
 
         await run_diagnosis_fixture_benchmark(args)
+    elif args.mode == "memory":
+        from benchmark.run_memory_governance_benchmark import run_memory_benchmark
+
+        run_memory_benchmark(args)
+    elif args.mode == "tool":
+        from benchmark.run_tool_safety_benchmark import run_tool_safety_benchmark
+
+        run_tool_safety_benchmark(args)
     else:
         raise SystemExit(f"unknown mode: {args.mode}")
 

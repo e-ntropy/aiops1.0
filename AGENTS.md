@@ -119,6 +119,9 @@ python scripts/ingest_kb_corpus.py --reset --batch 8
 python benchmark/run_benchmark.py retrieval --k 3
 python benchmark/run_benchmark.py ragas --limit 5
 python benchmark/run_benchmark.py workflow
+python benchmark/run_benchmark.py memory
+python benchmark/run_benchmark.py tool
+python benchmark/validate_scaled_benchmarks.py
 ```
 
 `ragas`, real diagnosis, ingestion with remote embeddings, and some health checks

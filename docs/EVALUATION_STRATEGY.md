@@ -9,6 +9,7 @@
 | --- | --- | --- | --- | --- |
 | L0 | Query、Capability、Scope、安全与生命周期契约 | `workflow_contract_eval.jsonl`、`lifecycle_contract_eval.jsonl` | Accuracy、Safety Pass、Exact Match | 低；纯离线、确定性 |
 | L0.5 | 自适应诊断流程与 Evidence 隔离 | `diagnosis_fixture_eval.jsonl` | Phase/Mode、正反例行为、Evidence Recall、Isolation、Exact Match | 低；纯离线、确定性 |
+| L0.6 | Memory 治理与 Tool 安全 | `memory_governance_eval.jsonl`、`tool_safety_eval.jsonl` | Precision/Recall、污染率、晋升、Fallback/Envelope Exact Match | 低；纯离线、确定性 |
 | L1 | 知识检索 | `retrieval_rk_50.jsonl` | Hit@K、MRR@K、Recall@K | 中；依赖语料、Embedding、Milvus、Rerank |
 | L2 | RAG 回答 | `ragas_qa_50.jsonl` | Faithfulness、Relevancy、Context Precision/Recall | 中高；生成与 Judge 都有随机性和费用 |
 | L3 | Fast/Deep 诊断 | `diagnosis_e2e_10.jsonl` | 根因命中、证据覆盖、引用正确、延迟、Token | 高；依赖模型、工具可用性和图状态 |
@@ -39,9 +40,9 @@ python benchmark/run_benchmark.py workflow --enforce
 - 恢复 Evidence 是否绑定同一 Scope 和真实 ToolCall ID；
 - 只有完整闭环才允许 `verified_knowledge` 晋升。
 
-当前数据集只有 32 条 Query 和 9 条生命周期用例，适合回归契约，不足以估计生产分布上的泛化。
-后续至少应扩展到每个主意图 30 条，并加入同义改写、错别字、中英混合、多意图、否定表达、
-Prompt Injection、超长 Query 和目标伪装。
+当前数据集包含 240 条 Query 和 120 条生命周期用例，覆盖 12 个 Query Family 与 9 个事故生命周期
+Family，并加入同义改写、多意图、否定表达、越权请求、数据源失败和脱敏拒绝。它适合回归契约，
+但仍不足以估计生产分布上的语义泛化；错别字、中英混合、超长 Query 和真实组织表达仍需扩充。
 
 版本化参考基线位于 `benchmark/baselines/workflow_contract_v1.json`。`--enforce` 同时验证数据集身份、
 样本下限和质量阈值，并以非零状态报告回归。修改数据集必须更新版本化基线并接受审阅；否则
@@ -54,10 +55,20 @@ python benchmark/run_benchmark.py fixture
 python benchmark/run_benchmark.py fixture --enforce
 ```
 
-16 条自生成夹具显式标注 `task_class`、`polarity`、`difficulty`，覆盖正常/边界、正例/反例/未知、
+120 条自生成夹具显式标注 `task_class`、`polarity`、`difficulty`，覆盖正常/边界、正例/反例/未知、
 简单/复杂，以及 Fast、Deep 和失败路径。每个 Observed Evidence 必须来自该 fixture，绑定受信
 ToolCall ID 与当前 Scope；Runner 不允许访问真实机器。该层用于发现编排和证据污染回归，不评估
 真实模型的语义推理能力，也不能替代真实事故人工 Gold。
+
+## 2.2 Memory 与工具安全消融
+
+240 条 Memory Gold 用同一组记录和期望集合比较 no-memory、flat-memory 与 governed-memory，避免把
+不同数据集上的分数错误拼成“前后提升”。报告记录级判定、Precision/Recall、污染/泄漏、晋升准确率，
+并以固定种子 paired bootstrap 给出增益区间。120 条 Tool Safety Gold 独立验证重试上限、替代数据源、
+证据缺口、fail-closed，以及 Scope/Risk/Permission/Idempotency/Timeout 结构化信封。
+
+这两套数据均为自生成离线契约。平铺 Memory 是消融对照，不代表项目曾在线上以该策略运行；0% 污染
+表示该固定集合中未发生，不等同于未知生产分布中的绝对安全。
 
 ## 3. 事故关闭到 Benchmark 的治理闭环
 
@@ -109,6 +120,7 @@ MTTR、人工操作次数、建议采纳率容易受事故严重度和团队经�
 
 - L0 安全通过率必须为 100%，任何下降直接阻断发布。
 - L0.5 Evidence 隔离通过率必须为 100%，任何真实宿主机来源混入夹具都阻断发布。
+- L0.6 Candidate、跨 Session、过期/替代 Memory 污染率必须为 0，Tool Safety Exact Match 必须为 100%。
 - L0 核心 Intent/Scope/Lifecycle 指标不得低于已批准基线。
 - L1-L3 必须记录数据集哈希、模型、Embedding、Rerank、Prompt/Skill 版本和运行环境；配置不一致的
   报告不能直接做 A/B 结论。

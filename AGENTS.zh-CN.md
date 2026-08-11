@@ -95,6 +95,9 @@ python scripts/ingest_kb_corpus.py --reset --batch 8
 python benchmark/run_benchmark.py retrieval --k 3
 python benchmark/run_benchmark.py ragas --limit 5
 python benchmark/run_benchmark.py workflow
+python benchmark/run_benchmark.py memory
+python benchmark/run_benchmark.py tool
+python benchmark/validate_scaled_benchmarks.py
 ```
 
 `ragas`、真实诊断、远程 Embedding 导入和部分健康检查可能调用付费或外部 Provider。

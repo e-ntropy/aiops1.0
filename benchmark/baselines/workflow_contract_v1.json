@@ -1,17 +1,17 @@
 {
   "schema_version": "1.0",
-  "name": "workflow_contract_v1",
-  "created_at": "2026-08-10",
+  "name": "workflow_contract_scaled_v1",
+  "created_at": "2026-08-11",
   "datasets": {
     "query": {
       "file": "workflow_contract_eval.jsonl",
-      "rows": 32,
-      "sha256": "fede1677bf459b51036f9804077758dbf0e7cdc591455ba9527cc9c5232d9253"
+      "rows": 240,
+      "sha256": "3a5648a0381c28649c428951786062e2e0ffc97f98d2ca5639d8c6864f2b186c"
     },
     "lifecycle": {
       "file": "lifecycle_contract_eval.jsonl",
-      "rows": 9,
-      "sha256": "e3935b3ed54cc1ca3c99619c59086beccd0ec18ab8abe5957d0ce2d54b59e7fc"
+      "rows": 120,
+      "sha256": "e88e3143234bd1c5a55c8ecda3317bee139eec1f351976247a7f33294d77a869"
     }
   },
   "thresholds": {

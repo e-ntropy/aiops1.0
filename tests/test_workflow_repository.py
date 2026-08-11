@@ -20,6 +20,7 @@ from app.workflows.repository import (
     WorkflowConflictError,
     WorkflowLeaseError,
     WorkflowRepository,
+    _scope_key,
 )
 from tests.test_system_inspection_workflow import FakeCollector, _snapshot
 
@@ -42,6 +43,7 @@ class _FakeConnection:
         self.current_revision: int | None = None
         self.current_lease_owner: str | None = None
         self.force_conflict = False
+        self.fetch_rows: list[dict] = []
 
     def transaction(self):
         return _AsyncContext(self)
@@ -52,7 +54,7 @@ class _FakeConnection:
 
     async def fetch(self, sql: str, *args):
         self.fetches.append((sql, args))
-        return []
+        return self.fetch_rows
 
     async def fetchrow(self, sql: str, *args):
         self.fetches.append((sql, args))
@@ -184,9 +186,38 @@ class WorkflowRepositoryTests(unittest.IsolatedAsyncioTestCase):
         await WorkflowRepository()._recall_memories(conn, state)
 
         sql = conn.fetches[0][0]
-        self.assertIn("tier = 'verified_knowledge' AND status = 'verified'", sql)
+        self.assertIn("tier IN ('session', 'incident', 'verified_knowledge')", sql)
         self.assertIn("superseded_by IS NULL", sql)
         self.assertNotIn("tier = 'candidate'", sql)
+
+    async def test_recall_applies_session_scope_redaction_and_lifecycle_policy(self) -> None:
+        state = await prepare_workflow("本机内存异常，排查根因", use_llm=False)
+        scope_key = _scope_key(state)
+        base = {
+            "memory_kind": "diagnosis_experience",
+            "status": "verified",
+            "content": {"summary": "sanitized"},
+            "confidence": 0.8,
+            "incident_id": "",
+            "service": "",
+            "scope_key": scope_key,
+            "redaction_passed": True,
+            "expires_at": None,
+            "superseded_by": None,
+        }
+        conn = _FakeConnection()
+        conn.fetch_rows = [
+            {**base, "id": "verified", "tier": "verified_knowledge", "session_id": ""},
+            {**base, "id": "foreign", "tier": "session", "status": "active", "session_id": "other"},
+            {**base, "id": "unsafe", "tier": "verified_knowledge", "session_id": "", "redaction_passed": False},
+        ]
+
+        await WorkflowRepository()._recall_memories(conn, state)
+
+        self.assertEqual([item["id"] for item in state.memory.recalled_items], ["verified"])
+        self.assertEqual(state.memory.knowledge_refs, ["verified"])
+        update = next(item for item in conn.executions if "recall_count" in item[0])
+        self.assertEqual(update[1][0], ["verified"])
 
     async def test_close_is_one_transactional_learning_write_set(self) -> None:
         state = await prepare_workflow("本机内存异常，排查根因", use_llm=False)

@@ -1,9 +1,9 @@
 {
-  "name": "diagnosis_fixture_v1",
+  "name": "diagnosis_fixture_scaled_v1",
   "dataset": {
     "file": "diagnosis_fixture_eval.jsonl",
-    "rows": 16,
-    "sha256": "337ef463d635d407c55bbcdd433b7de2e61d6e21c2e52d966fa6ddde0db668c2"
+    "rows": 120,
+    "sha256": "e22ff3fd2e4153cc00c21fc87e798bf2090432a000419dcc4846e5008b4343ac"
   },
   "thresholds": {
     "phase_accuracy": 1.0,

@@ -59,20 +59,23 @@
 
 ## 3. 评测资产与结果
 
-仓库包含 207 条版本化 Benchmark：
+仓库包含 990 条版本化 Benchmark：
 
 | 数据层 | 数量 | 当前证据 |
 | --- | ---: | --- |
-| Query Contract | 32 | Intent/Capability/Scope/Safety Exact Match 100% |
-| Lifecycle Contract | 9 | HITL/Verification/Closure/Memory Exact Match 100% |
+| Query Contract | 240 | Intent/Capability/Scope/Safety Exact Match 100% |
+| Lifecycle Contract | 120 | HITL/Verification/Closure/Memory Exact Match 100% |
+| Memory Governance | 240 | 记录级判定准确率 67.34% → 98.81%；治理召回率 95.83% |
+| Tool Safety | 120 | Fallback/Envelope Exact Match 100% |
 | Skill Router | 40 | 历史报告保留，不外推生产准确率 |
 | Retrieval | 50 | Hybrid hit@3 0.860；Dense 对照 0.800 |
 | RAG QA | 50 | Faithfulness 0.869 |
-| Diagnosis Fixture | 16 | Phase/Evidence/Isolation/Exact Match 100% |
+| Diagnosis Fixture | 120 | Phase/Evidence/Isolation/Exact Match 100% |
 | Diagnosis E2E | 10 | 保留为 Provider/环境相关评测，不作为离线 Gate |
 
-本轮验证：87 个本地确定性 unittest 全部通过；`workflow --enforce` 为 41/41；
-`fixture --enforce` 为 16/16；CompileAll、前端语法、Compose 配置和 `git diff --check` 通过。
+本轮验证：107 个本地确定性 unittest 全部通过；`workflow --enforce` 为 360/360；
+`fixture --enforce` 为 120/120；`memory --enforce` 与 `tool --enforce` 通过。扩容的 840 条样本中，
+边界用例占 65.00%，复杂用例占 59.05%。
 
 ## 4. 工程问题与解决案例
 

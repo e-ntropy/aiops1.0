@@ -43,6 +43,22 @@ class QueryUnderstandingTests(unittest.IsolatedAsyncioTestCase):
     def test_write_request_is_high_risk(self) -> None:
         result = deterministic_understanding("停止本机占用最高的进程")
         self.assertTrue(result.requires_confirmation)
+
+    def test_embedded_configuration_change_is_high_risk(self) -> None:
+        result = deterministic_understanding("修改本机 Nginx 配置并排查 502")
+        self.assertEqual(result.primary_intent, WorkflowIntent.FAULT_DIAGNOSIS)
+        self.assertEqual(result.risk_level.value, "high")
+        self.assertTrue(result.requires_confirmation)
+
+    def test_cleanup_and_process_termination_are_high_risk(self) -> None:
+        for query in (
+            "清理本机缓存并排查异常",
+            "结束本机占用内存最高的进程并排查 OOM",
+        ):
+            with self.subTest(query=query):
+                result = deterministic_understanding(query)
+                self.assertEqual(result.risk_level.value, "high")
+                self.assertTrue(result.requires_confirmation)
         self.assertEqual(result.risk_level.value, "high")
 
     def test_explanatory_fault_term_stays_knowledge(self) -> None:

@@ -53,7 +53,7 @@ Specialist Agent 协作，并把全过程事实写入 Postgres。
 | RAG 检索 | Parent-Child 切分、Milvus 向量召回、BM25、RRF 融合和可选 Rerank |
 | MCP 工具 | 系统、联网搜索、Windows 日志、网络和 Docker 工具独立运行 |
 | 权限边界 | PermissionMode、ToolMeta、Guardrail 和人工审批共同约束副作用 |
-| 可量化验证 | 检索/RAG 评测集、并发测试脚本和历史压测报告 |
+| 可量化验证 | 990 条分层 Benchmark、配对 Memory 消融、并发测试脚本和历史压测报告 |
 
 ## 架构概览
 
@@ -316,6 +316,9 @@ X-KB-Admin-Token: your-admin-token
 python benchmark/run_benchmark.py workflow
 python benchmark/run_benchmark.py workflow --enforce
 python benchmark/run_benchmark.py fixture --enforce
+python benchmark/run_benchmark.py memory --enforce
+python benchmark/run_benchmark.py tool --enforce
+python benchmark/validate_scaled_benchmarks.py
 ```
 
 ## 数据、安全与费用

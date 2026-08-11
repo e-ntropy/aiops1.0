@@ -49,7 +49,9 @@ class EvaluationOverviewTests(unittest.IsolatedAsyncioTestCase):
             result = await execute_evaluation_overview(state)
 
         self.assertEqual(result.state.phase, WorkflowPhase.COMPLETED)
-        self.assertEqual(sum(result.dataset_counts.values()), 70)
+        self.assertEqual(sum(result.dataset_counts.values()), 90)
+        self.assertIn("memory_governance", result.dataset_counts)
+        self.assertIn("tool_safety", result.dataset_counts)
         self.assertEqual(result.generated_sample_count, 6)
         self.assertEqual(result.state.evidence[-1].status, EvidenceStatus.REFERENCE)
         self.assertIn("在线 Agent 只展示资产", result.state.outcome.report_markdown)

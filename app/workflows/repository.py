@@ -9,6 +9,7 @@ from typing import Any
 from app.core.db_utils import json_dump, new_id
 from app.db.postgres import get_pool
 from app.workflows.incident_lifecycle import IncidentClosureResult
+from app.workflows.memory_retrieval import select_governed_memories
 from app.workflows.models import (
     FailureRecord,
     LifecycleStage,
@@ -522,30 +523,43 @@ class WorkflowRepository:
         rows = await conn.fetch(
             """
             SELECT id, tier, memory_kind, status, content, confidence,
-                   session_id, incident_id, service, scope_key
+                   session_id, incident_id, service, scope_key,
+                   redaction_passed, expires_at, superseded_by
             FROM memory_records
             WHERE superseded_by IS NULL
               AND (expires_at IS NULL OR expires_at > now())
+              AND tier IN ('session', 'incident', 'verified_knowledge')
               AND (
-                    (tier = 'session' AND session_id = $1)
-                 OR (tier = 'incident' AND incident_id = NULLIF($2, ''))
+                    (tier = 'session' AND status = 'active' AND session_id = $1)
+                 OR (tier = 'incident' AND status IN ('active', 'verified')
+                     AND incident_id = NULLIF($2, ''))
                  OR (tier = 'verified_knowledge' AND status = 'verified'
-                     AND ($3 = '' OR service = '' OR service = $3))
+                     AND redaction_passed = true
+                     AND (($3 <> '' AND service IN ('', $3)) OR ($3 = '' AND service = ''))
+                     AND (($4 <> '' AND scope_key IN ('', $4)) OR ($4 = '' AND scope_key = '')))
               )
             ORDER BY
                 CASE tier WHEN 'incident' THEN 0 WHEN 'verified_knowledge' THEN 1 ELSE 2 END,
                 confidence DESC,
                 updated_at DESC
-            LIMIT 20
+            LIMIT 100
             """,
             state.session_id,
             state.incident_id,
             state.scope.service,
+            _scope_key(state),
+        )
+        selected = select_governed_memories(
+            [dict(row) for row in rows],
+            session_id=state.session_id,
+            incident_id=state.incident_id,
+            service=state.scope.service,
+            scope_key=_scope_key(state),
+            limit=20,
         )
         recalled: list[dict[str, Any]] = []
         ids: list[str] = []
-        for row in rows:
-            item = dict(row)
+        for item in selected:
             item["content"] = _json_load(item.get("content"))
             recalled.append(item)
             ids.append(str(item["id"]))

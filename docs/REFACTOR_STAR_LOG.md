@@ -27,10 +27,10 @@ Deep 主流程；所有 Observed Evidence 必须绑定事故夹具、ToolCall ID
 1. 为统一诊断适配器增加结构化 `evidence` 事件；Observed 状态只有携带受信标记和 ToolCall ID 才被接受。
 2. 忽略事件传入的 Scope，强制绑定当前 WorkflowState Scope；畸形状态和非字典 content 关闭式降级为 Error。
 3. 将 Deep 结构化 Evidence 并入统一 State，同时保留旧图 Reference 兼容路径。
-4. 自生成 16 条脱敏事故夹具，并实现零外部依赖的 FixtureDiagnosisRunner。
+4. 自生成 120 条脱敏事故夹具，并实现零外部依赖的 FixtureDiagnosisRunner。
 5. 增加数据集 SHA-256、100% 隔离门槛与单元测试，禁止本机采集来源混入。
 
-**Result：** 16/16 夹具在 phase、mode、正反例行为、evidence type、isolation 和 exact match 上均为
+**Result：** 120/120 夹具在 phase、mode、正反例行为、evidence type、isolation 和 exact match 上均为
 100%，`fixture --enforce` 通过。这个分数仅证明当前确定性流程契约，不代表真实 LLM 根因准确率。
 
 **面试表述：** “E2E 评测让我发现 Evidence 可追溯仍不足以防止观测对象错误，因此我增加了
@@ -62,7 +62,7 @@ Full GC、Nginx upstream 和 Kafka lag 等复杂样本缺少专科 Playbook，Ro
 Prometheus、HTTP/端口和只读 Docker 工具；同步新增 3 份知识库 Runbook，明确趋势要求、反证、数据源
 失败和“Reference 不是 Observed Evidence”的边界，并加入 Adaptive Diagnosis 候选 Skill。
 
-**Result：** 内置 Skill 从 4 个扩展为 7 个，覆盖 16 条事故夹具中的主机、网络、数据库/缓存、K8s、
+**Result：** 内置 Skill 从 4 个扩展为 7 个，覆盖 120 条事故夹具中的主机、网络、数据库/缓存、K8s、
 Kafka、JVM 和 Nginx 场景。K8s 当前仍无专用 Tool/Skill，作为后续缺口保留，不宣称已完整支持。
 
 ## STAR-04：Query/Scope/生命周期缺少统一离线回归
@@ -73,10 +73,10 @@ Kafka、JVM 和 Nginx 场景。K8s 当前仍无专用 Tool/Skill，作为后续�
 **Task：** 建立无 Provider 依赖的发布前回归，覆盖 Query 深度理解、Capability、Scope、只读安全、
 人工确认、恢复、关闭和 Memory。
 
-**Action：** 构建 32 条 Query 与 9 条 lifecycle JSONL，加入对抗输入、模糊目标、高风险请求、采集器
+**Action：** 构建 240 条 Query 与 120 条 lifecycle JSONL，加入对抗输入、模糊目标、高风险请求、采集器
 失败和脱敏拒绝；固定数据集指纹与阈值，通过 `workflow --enforce` 阻断回归。
 
-**Result：** 当前版本两套数据共 41 条，Intent/Capability/Scope/Safety/Lifecycle/Exact Match 在该数据集
+**Result：** 当前版本两套数据共 360 条，Intent/Capability/Scope/Safety/Lifecycle/Exact Match 在该数据集
 上均为 100%。不得扩写为“线上准确率 100%”。
 
 ## STAR-05：后台 Worker 可能诊断错误主机
@@ -94,7 +94,7 @@ target-affine worker 作为显式后续架构需求。
 
 ## 尚未解决、不得包装为成果
 
-- 16 条夹具规模较小，来自人工构造，尚未覆盖真实事故分布、同义表达和跨组织差异。
+- 120 条夹具来自 16 个人工种子家族的确定性变体，仍未覆盖真实事故分布和跨组织表达差异。
 - Fixture Benchmark 不运行 LLM，不能衡量真实根因推理、Token、延迟或 Provider 抖动。
 - K8s、数据库直连、日志平台和 Trace 仍缺统一的 Scope-aware Evidence Provider。
 - 真实事故样本必须经脱敏、Gold 审核和事故家族切分后才能进入正式 Benchmark，不能自动晋升。
@@ -112,7 +112,7 @@ Lost Update，服务重启后也无法从权威事实恢复；事故关闭、Mem
 保存状态、事件、人工决定、Verified Memory、成功经验、画像、隔离评测样本并关闭 Incident/Group。
 
 **Result：** 新增单元测试覆盖服务端加载、禁止完整 State 提交、revision 409、并行 Lease 和原子关闭
-写集；本轮全部 87 个本地确定性测试通过。
+写集；本轮全部 107 个本地确定性测试通过。
 
 ## STAR-07：跨 Session 诊断报告污染知识对话
 
@@ -151,7 +151,38 @@ Specialist 的 Reference Evidence；文件 Wiki 仅保留显式兼容开关，�
 启动 Specialist 时 seed 必须非空；全数据源 unavailable 的边界样本则允许 seed 为空。
 
 **Result：** Diagnosis Fixture 的 Phase、Mode、Fault、Evidence、Isolation、Exact Match 恢复为
-16/16，`fixture --enforce` 通过；该问题成为“接口演进必须同步评测替身”的面试案例。
+120/120，`fixture --enforce` 通过；该问题成为“接口演进必须同步评测替身”的面试案例。
+
+## STAR-11：小样本与整百分比缺乏说服力
+
+**Situation：** 32 条 Query、9 条生命周期和 16 条诊断夹具只适合冒烟回归；Memory 只有“门禁通过”
+而没有同一批样本上的前后对照，面试中无法回答提升来自策略还是数据差异。
+
+**Task：** 在不调用付费 Provider、不读取真实宿主机的前提下，将评测规模扩展约 10 倍，同时保留边界、
+复杂、正反例与 Family 分组，并用真实运行结果量化 Memory 治理收益。
+
+**Action：** 建立确定性生成器和数据质量检查，将 Query/Lifecycle/Diagnosis 扩为 240/120/120，并新增
+240 条 Memory 与 120 条 Tool Safety；固定 ID、Family ID、SHA-256 与门槛。Memory 对同一批 Gold
+分别运行 no-memory、按置信度平铺和分层治理，使用 Wilson 区间及 5,000 次固定种子 paired bootstrap。
+
+**Result：** 版本化资产由 207 条扩展至 990 条；扩容的 840 条中边界/复杂用例占 65.00%/59.05%。
+分层 Memory 将记录级判定准确率由 67.34% 提升至 98.81%，提升 31.47pp（95% CI：29.74–33.15pp），
+Recall 为 95.83%；保留服务别名边界，没有为了整分修改 Gold。平铺策略仅作为离线消融基线。
+
+## STAR-12：扩容暴露 Query 领域边界与错误 Gold
+
+**Situation：** 240 条 Query 首跑 Exact Match 仅 88.33%。其中 20 条越界模板自己包含“运维”二字，
+与 out-of-scope 金标冲突；另有 Kafka、JVM、SLO、缓存、连接池、日志、网络、延迟等 8 条合理知识问答
+因领域词表缺失被关闭式拒绝。
+
+**Task：** 区分数据错误和产品缺陷，禁止通过放宽评分器或改错 Gold 来制造高分。
+
+**Action：** 按现有 fails-closed 状态机修正越界输入及 expected phase/capability；补齐常用运维知识实体；
+把“重启 CPU”等机械样本改为停止进程、修改配置、清理缓存、回滚版本等真实操作，又由此发现并补齐
+“结束/修改/调整/清理”等高风险动作识别；保留服务别名等未实现边界并全量复跑。
+
+**Result：** Query Contract 从首跑 88.33% 提升至 100%，且 Scope、Risk、Confirmation 与 Safety 始终
+保持 100%。该结果是确定性契约回归，不包装为开放语义或生产请求准确率。
 
 ## STAR-10：SSE 开始后才发现并发冲突
 

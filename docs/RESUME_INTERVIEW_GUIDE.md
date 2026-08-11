@@ -42,11 +42,11 @@ BM25/RRF、MCP、Docker Compose、RAGAS/OpenEvals。
 - **T：** 建立一条可恢复、可审计、并发安全的统一执行链，并让事故关闭以事实而非模型文字为准。
 - **A：** 设计服务端 `WorkflowState`，用 Postgres 保存 Run/Event/Decision/Evidence；以 `revision`
   乐观锁和执行 Lease 防止并发覆盖；串联根因确认、只读计划确认、同 Scope 新快照验证和事务关闭。
-- **R：** 32 条 Query 与 9 条 Lifecycle 契约在版本化门禁上 Exact Match 均为 100%；87 个本地
+- **R：** 240 条 Query 与 120 条 Lifecycle 契约在版本化门禁上 Exact Match 均为 100%；107 个本地
   确定性测试通过，覆盖状态转换、409 冲突、Lease、关闭事务和失败路径。
 
 **简历压缩句：** 设计 Query → Scope → Capability → Evidence → RCA → HITL → Recovery → Learning
-统一 Agent 链路，以 Postgres 事实库、revision CAS 和执行 Lease 管理服务端状态；用 41 条契约样本
+统一 Agent 链路，以 Postgres 事实库、revision CAS 和执行 Lease 管理服务端状态；用 360 条契约样本
 验证 Query/Scope/生命周期，当前数据集 Exact Match 100%。
 
 ### 2.2 Hybrid RAG 与知识证据治理（STAR）
@@ -70,7 +70,7 @@ Observed Evidence；50 条检索集 hit@3 由 0.800 提升至 0.860，MRR@3 提�
 - **A：** Capability 阶段只披露能力元数据，命中后再加载 7 个领域 Skill 的 Playbook 和 Tool
   allowlist；Tool 继续经过 `ToolMeta`、PermissionMode、Guardrail、Budget 与审批校验；状态机约束
   Phase、Scope、Evidence 和合法转换。
-- **R：** 7 个内置 Skill 的默认 ToolMeta 只读断言全部通过；32 条 Query 集覆盖多意图、模糊 Scope、
+- **R：** 7 个内置 Skill 的默认 ToolMeta 只读断言全部通过；240 条 Query 集覆盖多意图、模糊 Scope、
   Prompt Injection 与越权请求，Capability/Scope/Safety 在该数据集均为 100%。
 
 **简历压缩句：** 实现 Capability → Skill 元数据 → Playbook/Tool 按需加载的渐进式披露，结合
@@ -85,12 +85,13 @@ ToolMeta/Permission/Guardrail 与 Workflow 状态机收敛工具范围；7 个�
   Experience；创建 Run 时按 Session/Incident/Service/Scope 召回，只允许 `status=verified` 的长期
  知识进入诊断；到期记录自动标为 expired，Candidate 在事故确认恢复和脱敏关闭后才被 Verified
   Memory 替代。
-- **R：** 9 条生命周期样本覆盖确认、纠正、拒绝、恢复失败、脱敏失败与 Memory 晋升并全部通过；
-  单元测试验证 Candidate 不进入长期召回，诊断缓存按 Session Key 隔离。
+- **R：** 在 240 条同源配对 Memory Gold 上，分层治理将记录级召回判定准确率由平铺策略的 67.34%
+  提升至 98.81%，提升 31.47pp（95% paired bootstrap CI：29.74–33.15pp）；召回率 95.83%，并将
+  Candidate 污染、跨 Session 泄漏和过期经验误召回分别由 48.33%、40.83%、18.75% 降至 0%。
 
 **简历压缩句：** 构建 Session/Candidate/Verified Memory、实体画像和成败经验分层，按 Scope 召回并
-以 HITL + 恢复验证 + 脱敏关闭作为知识晋升门禁；生命周期评测 9/9，候选记忆与跨 Session 报告污染
-均由回归测试阻断。
+以 HITL + 恢复验证 + 脱敏关闭作为知识晋升门禁；240 条配对消融中记录级判定准确率由 67.34%
+提升至 98.81%，并阻断 Candidate、跨 Session 与过期经验污染。
 
 ### 2.5 Agent Harness、兜底与 HITL（STAR）
 
@@ -100,37 +101,39 @@ ToolMeta/Permission/Guardrail 与 Workflow 状态机收敛工具范围；7 个�
 - **A：** Harness 统一步骤/Token/时间预算和模型调用；工具仅对可重试错误有限重试，耗尽后切换
   数据源、输出证据缺口或 fail-closed；Observed Evidence 强制 Scope + ToolCall ID；异常/取消时关闭
   AgentRun 并释放 Lease；优化助手只输出 observe/verify/recommendation，禁止自动修改系统。
-- **R：** 16 条诊断 Fixture 覆盖正常、反例、未知、数据源全挂、畸形 Evidence 和协作失败，Phase、
-  Evidence Type、Isolation 与 Exact Match 均为 16/16；历史并发验证中 8/8 Worker 任务完成，峰值
+- **R：** 120 条诊断 Fixture 覆盖正常、反例、未知、数据源全挂、畸形 Evidence 和协作失败，Phase、
+  Evidence Type、Isolation 与 Exact Match 均为 120/120；120 条 Tool Safety 用例覆盖重试、降级、
+  fail-closed 与结构化 Tool Envelope 并全部通过；历史并发验证中 8/8 Worker 任务完成，峰值
   执行槽保持 2/2。
 
 **简历压缩句：** 通过 Harness 统一预算、有限重试、降级和审计，以 Scope/ToolCall 绑定阻断伪现场
-Evidence，并用 HITL 控制根因/计划/关闭；16 条故障夹具的流程、隔离与 Exact Match 均为 100%。
+Evidence，并用 HITL 控制根因/计划/关闭；120 条故障夹具的流程与隔离、120 条 Tool Safety 契约均为 100%。
 
 ### 2.6 分层评测体系（STAR）
 
 - **S：** “能生成报告”不能证明路由正确、证据属于目标对象、答案有引用或事故流程安全。
 - **T：** 建立从确定性契约到检索、生成、诊断和并发的分层评测，并避免真实机器与 Mock 数据互相污染。
-- **A：** 自建 207 条版本化样本：32 Query、9 Lifecycle、40 Skill Router、50 Retrieval、50 RAG QA、
-  16 Diagnosis Fixture、10 Diagnosis E2E；固定数据集指纹、环境元数据和 Release Gate，事故关闭样本
+- **A：** 自建并治理 990 条版本化样本：240 Query、120 Lifecycle、240 Memory、120 Tool Safety、
+  120 Diagnosis Fixture、40 Skill Router、50 Retrieval、50 RAG QA、10 Diagnosis E2E；固定数据集指纹、
+  Family ID、难度/边界标签和 Release Gate，事故关闭样本
   写入隔离区，审核后才能进入正式集合。
-- **R：** 本轮可离线复现的 Workflow 41/41、Diagnosis Fixture 16/16 均通过 Gate；检索和 RAG 指标
-  分层保存，避免用少量 Smoke Test 外推“零幻觉”或生产准确率。
+- **R：** 840 条扩容样本中边界用例占 65.00%、复杂用例占 59.05%；Workflow 360/360、Diagnosis
+  Fixture 120/120、Tool Safety 120/120 均通过 Gate，并以配对消融而非编造线上数据量化 Memory 改进。
 
-**简历压缩句：** 构建 207 条分层 Benchmark，覆盖 Query、生命周期、路由、检索、RAG、正反例诊断
-与 E2E；通过数据集指纹、隔离样本和 Release Gate 防止数据漂移与真实宿主机污染，当前确定性
-Workflow 41/41、Fixture 16/16 通过。
+**简历压缩句：** 构建 990 条分层 Benchmark，覆盖 Query、生命周期、Memory、Tool Safety、路由、
+检索、RAG、正反例诊断与 E2E；通过 Family 分组、数据集指纹、隔离样本和 Release Gate 防止数据
+漂移与真实宿主机污染，840 条扩容集中边界/复杂样本占 65.00%/59.05%。
 
 ## 3. 四点精简版
 
 - 设计服务端统一 Workflow，以 Postgres Run/Event/Decision/Evidence、revision CAS 和 Lease 串联
-  Query、真实取证、RCA、HITL、恢复验证和事务关闭；41 条契约样本 Exact Match 100%。
+  Query、真实取证、RCA、HITL、恢复验证和事务关闭；360 条契约样本 Exact Match 100%。
 - 实现 Parent-Child + Milvus/BM25/RRF Hybrid RAG，严格区分 Reference/Observed Evidence；50 条
   检索集 hit@3 从 0.800 提升至 0.860，MRR@3 从 0.710 提升至 0.777。
 - 以 Capability/Skill/Tool 渐进式披露、状态机和 Harness 统一预算、权限、有限重试与降级；7 个领域
-  Skill 默认工具均为只读，16 条诊断 Fixture 的流程与隔离检查 100% 通过。
-- 构建 Postgres Memory/画像/成败经验生命周期与 207 条分层 Benchmark，Verified Memory 仅在人工
-  确认、恢复验证和脱敏关闭后晋升，事故样本进入隔离评测区。
+  Skill 默认工具均为只读，120 条诊断 Fixture 的流程与隔离检查 100% 通过。
+- 构建 Postgres Memory/画像/成败经验生命周期与 990 条分层 Benchmark，Verified Memory 仅在人工
+  确认、恢复验证和脱敏关闭后晋升；配对消融中记录级判定准确率由 67.34% 提升至 98.81%。
 
 ## 4. 面试开场
 
@@ -139,7 +142,7 @@ Workflow 41/41、Fixture 16/16 通过。
 > 我做了一个面向 SRE/OnCall 的多智能体 AIOps 诊断与评测平台。它不是单轮运维问答，而是先理解
 > Query 和 Scope，再通过 RAG 或只读工具取证；Evidence Gate 决定是否启动 Metric、Log、Infra、
 > Runbook 专业 Agent，之后经过人工确认、同 Scope 恢复验证和事务关闭，把可信经验沉淀到 Postgres。
-> 我还构建了 207 条分层 Benchmark；当前确定性 Workflow 41/41、诊断 Fixture 16/16 通过。
+> 我还构建了 990 条分层 Benchmark；当前确定性 Workflow 360/360、诊断 Fixture 120/120 通过。
 
 ### 两分钟版本
 
@@ -155,8 +158,9 @@ Workflow 41/41、Fixture 16/16 通过。
 > Verified Memory、画像、经验和隔离评测样本。
 >
 > 评测上我没有只测几个 Demo，而是分成 Query、生命周期、Router、Retrieval、RAG、Diagnosis
-> Fixture 和 E2E，共 207 条。Hybrid RAG 在 50 条检索集上 hit@3 从 0.800 提升到 0.860；当前离线
-> Workflow 41/41、Fixture 16/16 通过。对外我把这些描述为参考实现指标，不外推真实线上 MTTR。
+> Fixture、Memory、Tool Safety 和 E2E，共 990 条。Hybrid RAG 在 50 条检索集上 hit@3 从 0.800
+> 提升到 0.860；Memory 配对消融的记录级判定准确率由 67.34% 提升至 98.81%。这些是版本化离线
+> 指标，不外推真实线上 MTTR。
 
 ## 5. 高频追问
 
@@ -177,7 +181,6 @@ Workflow 41/41、Fixture 16/16 通过。
 先区分 retryable 与 non-retryable。超时、连接类错误在预算内有限重试；参数错误、权限拒绝不重试。
 耗尽后按能力切换数据源、降级为当前快照分析、输出证据缺口或 fail-closed。每次失败写 FailureRecord；
 异常或取消时尽力关闭 AgentRun、释放 Lease，避免只在日志里留下错误。
-
 ### 如何防止 Memory 越用越差？
 
 Session、Candidate、Verified Knowledge 和失败经验分层保存；长期诊断只召回 verified、未过期、未被
@@ -200,14 +203,16 @@ Postgres/Redis 故障注入、Python 3.12 CI、灰度发布和长期真实事故
 
 | 指标 | 规模 | 结果 | 口径 |
 | --- | ---: | ---: | --- |
-| Query Contract | 32 | 100% | Intent/Capability/Scope/Safety Exact Match |
-| Lifecycle Contract | 9 | 100% | HITL/Verification/Closure/Memory Exact Match |
-| Diagnosis Fixture | 16 | 100% | Phase/Mode/Fault/Evidence/Isolation/Exact Match |
+| Query Contract | 240 | 100% | Intent/Capability/Scope/Safety Exact Match |
+| Lifecycle Contract | 120 | 100% | HITL/Verification/Closure/Memory Exact Match |
+| Memory Governance | 240 | 67.34% → 98.81% | 平铺→分层；记录级判定准确率；增益 95% CI 29.74–33.15pp |
+| Tool Safety | 120 | 100% | Fallback/Envelope Exact Match |
+| Diagnosis Fixture | 120 | 100% | Phase/Mode/Fault/Evidence/Isolation/Exact Match |
 | Retrieval | 50 | hit@3 0.860 | Hybrid；Dense 对照 0.800 |
 | RAG QA | 50 | Faithfulness 0.869 | 历史固定 Provider 评测报告 |
 | Skill Router | 40 | 0.750 | 历史固定数据集，不包装为生产准确率 |
-| 本地 unittest | 87 | 全部通过 | 确定性与 Mock；不代表外部服务集成 |
-| 版本化 Benchmark | 207 | 7 个数据层 | 不把不同层的样本简单相加为准确率 |
+| 本地 unittest | 107 | 全部通过 | 确定性与 Mock；不代表外部服务集成 |
+| 版本化 Benchmark | 990 | 9 个数据层 | 不把不同层的样本简单相加为准确率 |
 
 ## 7. 表述边界
 

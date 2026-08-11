@@ -1,19 +1,24 @@
 # Benchmark
 
-这个目录放七套评测集和五个评测脚本:
+这个目录放九套评测集和七个评测入口，共 990 条版本化样本：
 
 - `ragas_qa_50.jsonl`: 50 条端到端 RAGAS QA, 每个场景 5 条。
 - `retrieval_rk_50.jsonl`: 50 条检索侧 R@K 题, 每个场景 5 条。
 - `skill_router_eval.jsonl`: 40 条 Skill Router/OOS 评测。
 - `diagnosis_e2e_10.jsonl`: 10 条 Fast/Deep 诊断评测。
-- `workflow_contract_eval.jsonl`: 32 条 Query/Capability/Scope/安全与对抗契约评测。
-- `lifecycle_contract_eval.jsonl`: 9 条确认、恢复、关闭和 Memory 门禁评测。
-- `diagnosis_fixture_eval.jsonl`: 16 条完全离线事故夹具，覆盖正常/边界、正例/反例/未知、简单/复杂。
-- `run_benchmark.py`: 支持 retrieval / ragas / workflow / fixture 四种模式。
+- `workflow_contract_eval.jsonl`: 240 条 Query/Capability/Scope/安全与对抗契约评测。
+- `lifecycle_contract_eval.jsonl`: 120 条确认、恢复、关闭和 Memory 门禁评测。
+- `diagnosis_fixture_eval.jsonl`: 120 条完全离线事故夹具，覆盖正常/边界、正例/反例/未知、简单/复杂。
+- `memory_governance_eval.jsonl`: 240 条 Session/Incident/Service/Scope、过期、替代、脱敏和晋升消融评测。
+- `tool_safety_eval.jsonl`: 120 条 Tool Envelope、有限重试、替代源、证据缺口和 fail-closed 评测。
+- `run_benchmark.py`: 支持 retrieval / ragas / workflow / fixture / memory / tool 六种模式。
 - `run_skill_router_benchmark.py`: Skill 选择与结构化 OOS 判分。
 - `run_diagnosis_benchmark.py`: 根因、证据引用、延迟和 Token 评测。
 - `run_workflow_benchmark.py`: 纯离线统一工作流与事故生命周期评测。
 - `run_diagnosis_fixture_benchmark.py`: 纯离线 Fast → Evidence Gate → Deep 与证据隔离评测。
+- `run_memory_governance_benchmark.py`: 对同一批 Gold 运行 no-memory / flat-memory / governed-memory 配对消融。
+- `run_tool_safety_benchmark.py`: 验证结构化工具信封和失败降级策略。
+- `validate_scaled_benchmarks.py`: 校验数量、唯一 ID、Family 分组、标签完备性与难度比例。
 
 完整的分层难度、事故样本治理和发布门禁见
 [AIOps 评测策略](../docs/EVALUATION_STRATEGY.md)。
@@ -31,7 +36,7 @@ python benchmark/run_benchmark.py workflow --enforce
 
 报告写入 `benchmark/reports/workflow_contract_*.json`，Web UI 的“AIOps 质量评估”面板可查看
 汇总和失败样本。它验证 Intent、Capability、Scope、二次确认、只读 Tool 白名单、后台执行亲和性、
-生命周期阶段、关闭门禁和 Memory 晋升。当前规模仅用于契约回归，不代表生产准确率。
+生命周期阶段、关闭门禁和 Memory 晋升。它仍是自生成离线契约集，不代表生产准确率。
 
 `--enforce` 使用 `benchmark/baselines/workflow_contract_v1.json`，同时校验数据集 SHA-256、
 最小样本数和版本化参考阈值。数据集或阈值只能在审阅新失败、Gold 和安全影响后更新，不能为了让
@@ -54,8 +59,22 @@ python benchmark/run_benchmark.py fixture --enforce
 - 每条 Observed Evidence 必须绑定 fixture ID、ToolCall ID 和当前 Scope；
 - 禁止 `get_local_*`、本机健康快照等真实宿主机来源混入夹具。
 
-`benchmark/baselines/diagnosis_fixture_v1.json` 固定数据集 SHA-256 和门槛。当前 16 条只能证明流程与
+`benchmark/baselines/diagnosis_fixture_v1.json` 固定数据集 SHA-256 和门槛。120 条夹具用于证明流程与
 隔离契约，不代表 LLM 在真实事故上的根因准确率；后者仍由有成本、需固定环境的 E2E 评测负责。
+
+## Memory 配对消融与 Tool Safety
+
+```bash
+python benchmark/validate_scaled_benchmarks.py
+python benchmark/run_benchmark.py memory --enforce
+python benchmark/run_benchmark.py tool --enforce
+```
+
+Memory Runner 对 240 条相同 Gold 分别执行无记忆、按置信度平铺召回和分层治理策略，报告 Precision、
+Recall、记录级判定准确率、跨 Session 泄漏、Candidate/过期污染、晋升准确率、Wilson 区间和固定种子
+paired bootstrap。平铺策略是离线消融基线，不是伪造的线上历史版本。当前治理策略记录级准确率
+98.81%，相对平铺策略 67.34% 提升 31.47pp（95% 配对区间 29.74–33.15pp），Recall 为 95.83%；
+未达到 100% 的 20 条是显式保留的服务别名边界。
 
 ## 前置条件
 
