@@ -13,7 +13,7 @@
 
 ## STAR-01：真实宿主机 CPU/内存污染合成事故
 
-**Situation：** 旧 `diagnosis_e2e_10` 会直接运行 Fast/Deep Agent。虚构 MySQL、Redis、Kafka 等事故
+**Situation：** `diagnosis_e2e_10` 直接运行现场诊断 Agent。虚构 MySQL、Redis、Kafka 等事故
 没有稳定目标数据源时，MetricAgent/InfraAgent 可能读取执行评测的 Windows 宿主机；历史报告中
 本机内存约 87%–90%，结果被错误拼入事故报告。结构化 Evidence 只能证明“调用过工具”，不能证明
 “观察的是正确对象”。
@@ -67,7 +67,7 @@ Kafka、JVM 和 Nginx 场景。K8s 当前仍无专用 Tool/Skill，作为后续�
 
 ## STAR-04：Query/Scope/生命周期缺少统一离线回归
 
-**Situation：** 原 Fast/Deep、API 和后台任务各自维护部分流程，Intent 冲突、Scope 未确认、越权请求、
+**Situation：** 不同 API 和后台任务各自维护部分流程，Intent 冲突、Scope 未确认、越权请求、
 恢复验证和 Memory 晋升难以用同一套契约验证。
 
 **Task：** 建立无 Provider 依赖的发布前回归，覆盖 Query 深度理解、Capability、Scope、只读安全、
@@ -100,11 +100,77 @@ target-affine worker 作为显式后续架构需求。
 - 真实事故样本必须经脱敏、Gold 审核和事故家族切分后才能进入正式 Benchmark，不能自动晋升。
 - 项目尚无 CI Workflow 和完整 tests/ 覆盖，静态检查与本地测试不能证明生产就绪。
 
+## STAR-06：客户端 State 回传导致并发覆盖与越权输入
+
+**Situation：** 工作流接口由客户端回传完整 `WorkflowState`。浏览器多标签、重试或伪造字段会造成
+Lost Update，服务重启后也无法从权威事实恢复；事故关闭、Memory 写入和人工决定彼此不是同一事务。
+
+**Task：** 将状态所有权收回服务端，保证每次转换可恢复、可审计，并让并发请求明确冲突而不是静默覆盖。
+
+**Action：** 新增 Postgres `workflow_runs/workflow_events/human_decisions`，客户端后续只传
+`run_id + expected_revision`；更新使用 CAS，执行前领取带过期时间的 Lease；事故关闭在一个事务内
+保存状态、事件、人工决定、Verified Memory、成功经验、画像、隔离评测样本并关闭 Incident/Group。
+
+**Result：** 新增单元测试覆盖服务端加载、禁止完整 State 提交、revision 409、并行 Lease 和原子关闭
+写集；本轮全部 87 个本地确定性测试通过。
+
+## STAR-07：跨 Session 诊断报告污染知识对话
+
+**Situation：** 短期诊断报告使用全局 Redis Key，任意会话的 RAG 对话都可能读取上一位用户的机器
+诊断报告，形成隐私和错误上下文污染。
+
+**Task：** 保留“诊断后继续追问”的体验，同时确保报告只在原 Session 内可见。
+
+**Action：** 将报告缓存 Key 改为 Session ID 的 SHA-256 派生值；无 Session 时不写入也不读取；RAG
+与 Web Context 显式传递当前 Session。长期关联则只读取 Postgres Verified Knowledge。
+
+**Result：** 回归测试验证两个 Session 的报告互不可见，缺失 Session 不会落入共享默认空间。
+
+## STAR-08：Candidate 与运行时 Wiki 造成长期知识污染
+
+**Situation：** 模型报告即使未人工确认、未验证恢复，也可能被写入文件 Wiki 并在后续诊断中召回；
+错误结论会在多次使用后放大。
+
+**Task：** 让长期知识具备明确来源、状态、作用域、过期与替代关系，候选内容不得参与可信召回。
+
+**Action：** 默认关闭诊断图的文件 Wiki 写入和召回；Postgres 将 Session、Candidate、Verified、Profile、
+Success/Failure Experience 分表/分层管理；只召回 verified、未过期、未 supersede 且服务作用域匹配的
+长期记忆，创建 Workflow 时把到期记录归档为 expired。
+
+**Result：** 单元测试从 SQL 契约和图输入两层验证 Candidate 被拒绝、Verified Memory 才能成为
+Specialist 的 Reference Evidence；文件 Wiki 仅保留显式兼容开关，默认关闭。
+
+## STAR-09：统一诊断升级后评测 Runner 接口漂移
+
+**Situation：** 初步 Evidence 开始传入 Specialist 阶段后，生产 Runner 新增 `initial_evidence` 参数，
+离线 Fixture Runner 没有同步，Release Gate 直接因 `unexpected keyword argument` 失败。
+
+**Task：** 修复评测基础设施，同时证明专业阶段确实继承了可用的初步证据，而不是仅让函数签名兼容。
+
+**Action：** 更新 Fixture Runner 契约并记录 seed 数量；新增检查：存在 observed/reference 初步证据且
+启动 Specialist 时 seed 必须非空；全数据源 unavailable 的边界样本则允许 seed 为空。
+
+**Result：** Diagnosis Fixture 的 Phase、Mode、Fault、Evidence、Isolation、Exact Match 恢复为
+16/16，`fixture --enforce` 通过；该问题成为“接口演进必须同步评测替身”的面试案例。
+
+## STAR-10：SSE 开始后才发现并发冲突
+
+**Situation：** 执行 Lease 原先在 SSE 生成器内部领取。HTTP 200 响应头可能已经发出，此时即使
+revision 过期或 Run 已被占用，也无法向客户端返回正确的 409。
+
+**Task：** 保证并发拒绝发生在任何流式事件发送之前。
+
+**Action：** 将服务端 State 加载、CAS 校验和 Lease Claim 移到 `EventSourceResponse` 创建之前；
+生成器只负责执行、事件流和最终持久化。新增回归测试验证返回响应对象前 Claim 已经完成。
+
+**Result：** 冲突可以使用标准 HTTP 409 表达；执行异常或取消会写 Failure、关闭 AgentRun 并释放
+Lease，避免长期悬挂的运行记录。
+
 ## 工程验证中发现的债务
 
 ### 未固定 Ruff 规则集
 
-对全仓直接运行当前 `.venv` 的新版 Ruff 默认规则会报告 581 个历史问题，主要是旧 typing 写法、
+对全仓直接运行当前 `.venv` 的新版 Ruff 默认规则会报告 582 个历史问题，主要是既有 typing 写法、
 import 顺序和 broad exception。仓库没有 `pyproject.toml` 或共享 Ruff 配置，也明确禁止无关的全量格式化。
 本轮采用“变更文件定向 Ruff 零告警 + 全量 compile/tests”验证，不声称全仓 lint clean。后续应单独批准
 并提交 lint 配置基线，再按模块清债，避免把数百个机械变更混进功能提交。

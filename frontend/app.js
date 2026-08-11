@@ -274,6 +274,7 @@ async function runAiopsRealtime(query) {
                 query,
                 session_id: sessionId,
                 use_llm: true,
+                actor: "web-user",
             }),
             signal: aiopsAbortController.signal,
         });
@@ -291,7 +292,13 @@ async function runAiopsRealtime(query) {
             const clarifiedResp = await fetch(`${API}/workflows/clarify`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ state, answer, use_llm: true }),
+                body: JSON.stringify({
+                    run_id: state.run_id,
+                    expected_revision: state.revision,
+                    answer,
+                    use_llm: true,
+                    actor: "web-user",
+                }),
                 signal: aiopsAbortController.signal,
             });
             const clarifiedBody = await clarifiedResp.json();
@@ -307,7 +314,11 @@ async function runAiopsRealtime(query) {
         const resp = await fetch(`${API}/workflows/execute/stream`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ state }),
+            body: JSON.stringify({
+                run_id: state.run_id,
+                expected_revision: state.revision,
+                actor: "web-agent",
+            }),
             signal: aiopsAbortController.signal,
         });
         let ragBuffer = "";
@@ -557,7 +568,11 @@ function bindIncidentLifecycleActions(reportEl) {
         }
     };
     reportEl.querySelector("#lifecycle-start")?.addEventListener("click", () => run(async () => {
-        aiopsLifecycleState = await postLifecycle("initialize", { state: aiopsLifecycleState });
+        aiopsLifecycleState = await postLifecycle("initialize", {
+            run_id: aiopsLifecycleState.run_id,
+            expected_revision: aiopsLifecycleState.revision,
+            actor: "web-user",
+        });
     }));
     reportEl.querySelector("#lifecycle-confirm-diagnosis")?.addEventListener("click", () => run(async () => {
         const proposed = aiopsLifecycleState.lifecycle?.diagnosis?.proposed_root_cause || "";
@@ -565,10 +580,12 @@ function bindIncidentLifecycleActions(reportEl) {
         if (rootCause === null || !rootCause.trim()) throw new Error("根因不能为空");
         const decision = rootCause.trim() === proposed.trim() ? "confirmed" : "corrected";
         aiopsLifecycleState = await postLifecycle("confirm-diagnosis", {
-            state: aiopsLifecycleState,
+            run_id: aiopsLifecycleState.run_id,
+            expected_revision: aiopsLifecycleState.revision,
             decision,
             corrected_root_cause: decision === "corrected" ? rootCause.trim() : "",
             note: "Web 人工确认",
+            decided_by: "web-user",
         });
     }));
     reportEl.querySelector("#lifecycle-confirm-plan")?.addEventListener("click", () => run(async () => {
@@ -576,24 +593,31 @@ function bindIncidentLifecycleActions(reportEl) {
             throw new Error("用户取消了计划确认");
         }
         aiopsLifecycleState = await postLifecycle("confirm-plan", {
-            state: aiopsLifecycleState,
+            run_id: aiopsLifecycleState.run_id,
+            expected_revision: aiopsLifecycleState.revision,
             decision: "confirmed",
             note: "Web 人工确认只读验证计划",
+            decided_by: "web-user",
         });
     }));
     reportEl.querySelector("#lifecycle-verify")?.addEventListener("click", () => run(async () => {
-        aiopsLifecycleState = await postLifecycle("verify-recovery", { state: aiopsLifecycleState });
+        aiopsLifecycleState = await postLifecycle("verify-recovery", {
+            run_id: aiopsLifecycleState.run_id,
+            expected_revision: aiopsLifecycleState.revision,
+            actor: "web-user",
+        });
     }));
     reportEl.querySelector("#lifecycle-close")?.addEventListener("click", () => run(async () => {
         const closedBy = window.prompt("请输入关闭人标识");
         if (!closedBy?.trim()) throw new Error("关闭人不能为空");
         const redactedQuery = window.prompt("请输入已脱敏的问题描述（不得包含主机名、IP、账号、密钥）");
         if (!redactedQuery?.trim()) throw new Error("脱敏问题不能为空");
-        if (!window.confirm("确认内容已脱敏，并生成评测样本与候选知识？")) {
+        if (!window.confirm("确认内容已脱敏，并生成评测样本与已验证知识？")) {
             throw new Error("脱敏确认未通过");
         }
         const result = await postLifecycle("close", {
-            state: aiopsLifecycleState,
+            run_id: aiopsLifecycleState.run_id,
+            expected_revision: aiopsLifecycleState.revision,
             closed_by: closedBy.trim(),
             redacted_query: redactedQuery.trim(),
             redaction_passed: true,
@@ -607,15 +631,15 @@ function handleAdaptiveWorkflowEvent(adaptive, planEl, stepsEl, reportEl, status
     if (["fast_event", "deep_event"].includes(adaptive?.type) && data.event) {
         handleAiopsEvent(data.event, planEl, stepsEl, reportEl, statusEl);
     } else if (adaptive?.type === "adaptive_start") {
-        appendUnifiedStep(stepsEl, "Fast Triage", "先采集最小只读证据");
-        statusEl.textContent = "Fast Triage 执行中...";
+        appendUnifiedStep(stepsEl, "快速证据收集", "先采集最小只读证据");
+        statusEl.textContent = "快速证据收集中...";
     } else if (adaptive?.type === "evidence_gate") {
         const decision = data.assessment?.decision || "unknown";
         appendUnifiedStep(stepsEl, "Evidence Quality Gate", decision);
         statusEl.textContent = `证据质量: ${decision}`;
     } else if (adaptive?.type === "deep_escalation") {
-        appendUnifiedStep(stepsEl, "升级 Deep", adaptive.message || "交叉取证");
-        statusEl.textContent = "Deep 多 Agent 交叉取证中...";
+        appendUnifiedStep(stepsEl, "专家协作诊断", adaptive.message || "交叉取证");
+        statusEl.textContent = "多 Agent 专家协作取证中...";
     } else if (["adaptive_complete", "adaptive_failed"].includes(adaptive?.type)) {
         renderUnifiedFinalState(data.state, reportEl, statusEl);
     }
@@ -646,6 +670,13 @@ function handleUnifiedWorkflowEvent(ev, planEl, stepsEl, reportEl, statusEl, rag
         const state = d.state || result.state || result.inspection?.state;
         renderUnifiedFinalState(state, reportEl, statusEl);
         if (ev.type === "workflow_failed") statusEl.textContent = "失败 ✗";
+    } else if (ev?.type === "workflow_persisted") {
+        renderUnifiedFinalState(d.state, reportEl, statusEl);
+        appendUnifiedStep(
+            stepsEl,
+            "状态已持久化",
+            `run=${d.state?.run_id || "-"} · revision=${d.state?.revision || "-"}`
+        );
     }
     return ragBuffer;
 }

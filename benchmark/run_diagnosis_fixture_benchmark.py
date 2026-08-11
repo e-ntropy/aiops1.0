@@ -71,6 +71,7 @@ class FixtureDiagnosisRunner:
     def __init__(self, row: dict[str, Any]) -> None:
         self.row = row
         self.calls: list[str] = []
+        self.specialist_seed_count = 0
 
     async def __call__(
         self,
@@ -79,9 +80,16 @@ class FixtureDiagnosisRunner:
         session_id: str,
         diagnosis_mode: Any,
         cache_reports: bool,
+        initial_evidence: list[dict[str, Any]] | None = None,
+        recalled_memories: list[dict[str, Any]] | None = None,
+        incident_group_id: str = "",
+        incident_id: str = "",
+        persist_legacy_wiki: bool = False,
     ):
         mode = str(getattr(diagnosis_mode, "value", diagnosis_mode)).lower()
         self.calls.append(mode)
+        if mode == "deep":
+            self.specialist_seed_count = len(initial_evidence or [])
         section = dict(self.row.get(mode) or {})
         for index, fixture in enumerate(section.get("evidence") or [], 1):
             status = str(fixture.get("status") or "observed")
@@ -166,6 +174,10 @@ async def score_row(row: dict[str, Any]) -> dict[str, Any]:
         "get_local_disk_usage",
         "list_top_processes",
     }
+    triage_has_seedable_evidence = any(
+        str(item.get("status") or "observed") in {"observed", "reference"}
+        for item in (row.get("fast") or {}).get("evidence") or []
+    )
     isolation_checks = {
         "fixture_bound": all(
             (item.get("metadata") or {}).get("fixture_id") == row["id"] for item in observed
@@ -178,6 +190,11 @@ async def score_row(row: dict[str, Any]) -> dict[str, Any]:
         "no_real_host_source": all(item.get("source") not in forbidden_sources for item in observed),
         "runner_modes": runner.calls
         == (["fast"] if row["expected_effective_mode"] == "fast" else ["fast", "deep"]),
+        "specialist_receives_triage_evidence": (
+            runner.specialist_seed_count > 0
+            if "deep" in runner.calls and triage_has_seedable_evidence
+            else runner.specialist_seed_count == 0
+        ),
     }
     checks = {
         "phase": phase == str(row["expected_phase"]),

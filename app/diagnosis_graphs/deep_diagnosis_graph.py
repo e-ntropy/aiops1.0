@@ -164,32 +164,39 @@ async def incident_manager_node(state: DeepDiagnosisState) -> DeepDiagnosisState
 # ② CorrelationContext  —— 真节点 (M7 主线 1·步 6, C 的接入点之一)
 # ============================================================
 async def correlation_context_node(state: DeepDiagnosisState) -> DeepDiagnosisState:
-    """构建关联上下文: 同组其它告警 (Postgres incident_groups) + LLM Wiki 经验召回。
+    """构建关联上下文: 同组告警 + Postgres Verified Memory。
 
     - 同 IncidentGroup 其它 alert 拉取 → 让 RCAJudge 知道本次不是孤立事件
-    - LLM Wiki recall_block → 读 index 优先取相关历史经验页注入
+    - 只接受统一 Workflow 预先按 Scope 召回的 verified_knowledge
     """
     incident_group_id = state.get("incident_group_id") or ""
 
-    # LLM Wiki 召回: 读 index 优先取相关页作为一条 evidence 注入, 供 RCAJudge 参考。best-effort。
-    lessons_evs = []
-    try:
-        from app.wiki.store import recall_block
-
-        _block = await recall_block(
-            query=str(state.get("input") or ""),
-            signature=str(state.get("alert_signature") or ""),
-        )
-        if _block:
+    lessons_evs: list[dict[str, Any]] = []
+    for memory in state.get("recalled_memories") or []:
+        if (
+            str(memory.get("tier") or "") != "verified_knowledge"
+            or str(memory.get("status") or "") != "verified"
+        ):
+            continue
+        content = memory.get("content") or {}
+        if isinstance(content, dict):
+            root_cause = str(content.get("root_cause") or "")
+            verification = str(content.get("verification") or "")
+            summary = " / ".join(item for item in (root_cause, verification) if item)
+        else:
+            summary = str(content)
+        if summary:
             lessons_evs.append({
                 "source": str(EvidenceSource.INCIDENT_HISTORY),
-                "type": "wiki_recall",
-                "summary": ("LLM Wiki 召回: " + " / ".join(_block.splitlines()))[:200],
-                "content": {"wiki": _block},
-                "metadata": {"agent": "correlation_context", "kind": "wiki_recall"},
+                "type": "verified_memory",
+                "summary": ("已验证历史经验: " + summary)[:200],
+                "content": {"memory_id": memory.get("id")},
+                "metadata": {
+                    "agent": "correlation_context",
+                    "kind": "verified_memory",
+                    "memory_id": memory.get("id"),
+                },
             })
-    except Exception as _exc:
-        logger.warning(f"[deep] wiki recall failed (ignored): {type(_exc).__name__}: {_exc}")
 
     if not incident_group_id:
         # 手动诊断路径: 无 group 元信息, 仅注入经验召回 (若有)

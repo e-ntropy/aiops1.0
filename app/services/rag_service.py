@@ -165,6 +165,7 @@ async def stream_chat(
     web_task = asyncio.create_task(
         build_web_context(
             rewritten_question,
+            session_id=session_id,
             summary=session.get("summary") or "",
             recent_messages=recent_messages,
             enabled=web_search,
@@ -235,11 +236,14 @@ async def stream_chat(
         f"(hybrid={settings.rag_hybrid_enabled}, rerank={settings.rag_rerank_enabled})"
     )
 
-    # ---------- 注入最近 AIOps 诊断报告 (跨 session, 走 Redis) ----------
+    # ---------- 注入当前 session 最近 AIOps 诊断报告 ----------
     # 不依赖联网开关, 让 "刚才那个 vmmem 是什么" 这种指代追问也能找到答案.
     # 只取 1 份, 单份截断 1200 字 (报告头 TL;DR 已足够); 想看更早请去 AIOps 页面.
     try:
-        recent_reports = await chat_memory.get_recent_diagnosis_reports(limit=1)
+        recent_reports = await chat_memory.get_recent_diagnosis_reports(
+            session_id=session_id,
+            limit=1,
+        )
     except Exception as e:
         logger.warning(f"[rag] 读取最近诊断报告失败: {type(e).__name__}: {e}")
         recent_reports = []

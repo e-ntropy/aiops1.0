@@ -1,4 +1,4 @@
-"""六类核心 AIOps Capability 的统一流式执行入口。"""
+"""AIOps Capability 的统一流式执行入口。"""
 
 from __future__ import annotations
 
@@ -8,6 +8,8 @@ from typing import Any
 from app.services.rag_service import stream_chat
 from app.workflows.adaptive_diagnosis import stream_adaptive_diagnosis
 from app.workflows.capabilities import CapabilityId
+from app.workflows.evaluation_overview import execute_evaluation_overview
+from app.workflows.incident_review import execute_incident_review
 from app.workflows.memory_policy import attach_memory_write_policy
 from app.workflows.models import (
     EvidenceItem,
@@ -170,4 +172,26 @@ async def stream_capability_workflow(
             result=result.model_dump(mode="json"),
         )
         return
-    raise NotImplementedError(f"Capability {capability_id.value} 尚未接入统一执行器")
+    if capability_id == CapabilityId.INCIDENT_REVIEW:
+        result = await execute_incident_review(state)
+        yield _event(
+            "workflow_complete"
+            if result.state.phase == WorkflowPhase.COMPLETED
+            else "workflow_failed",
+            capability_id,
+            result.state.outcome.summary or result.state.terminal_reason,
+            result=result.model_dump(mode="json"),
+        )
+        return
+    if capability_id == CapabilityId.EVALUATION:
+        result = await execute_evaluation_overview(state)
+        yield _event(
+            "workflow_complete"
+            if result.state.phase == WorkflowPhase.COMPLETED
+            else "workflow_failed",
+            capability_id,
+            result.state.outcome.summary or result.state.terminal_reason,
+            result=result.model_dump(mode="json"),
+        )
+        return
+    raise RuntimeError(f"Capability Registry 与统一执行器不一致: {capability_id.value}")

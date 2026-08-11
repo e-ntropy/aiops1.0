@@ -1,4 +1,4 @@
-# Multi-Agent AIOps Platform V3
+# Multi-Agent AIOps Platform
 
 ![Python](https://img.shields.io/badge/Python-3.12-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-green)
@@ -20,18 +20,17 @@
 > - 多 Agent 协作、工具调用、证据汇总与诊断报告生成的基本流程。
 >
 > 本项目是我的阶段性学习成果，仅适合学习和入门参考，不建议直接用于生产环境。
-> 当前仓库正在进行 V2 统一工作流重构。旧 V3 API 保持兼容，新功能优先进入
-> `app/workflows/` 的 Capability → Evidence 闭环。
+> 当前实现以 `app/workflows/` 为统一入口，Postgres 保存工作流、事故、证据、人工决策、
+> Memory、画像、成败经验和评测样本；Redis 只承担队列、租约之外的短期协调与会话缓存。
 
 ---
 
 面向 OnCall / SRE 场景的多智能体诊断工作台。系统把用户故障描述或 Alertmanager 告警转换为
 结构化任务，选择对应 Skill，通过 RAG 与 MCP 工具收集证据，并输出可追溯的 Markdown 报告。
 
-V3 在原有单次诊断链路上增加了 `fast / deep` 双模式、Redis Streams 队列、后台 Worker、
-Postgres 事实库、事件中心、权限与审批结构、LLM Wiki、RAG 评测和并发压测。
-V2 重构在其上提供统一 Capability Planner，将 Fast/Deep 合并为按证据质量升级的自适应诊断，
-并组合知识问答、系统状态、一键巡检、只读优化和容量性能分析。
+平台通过统一 Capability Planner 组合知识问答、系统状态、一键巡检、故障诊断、只读优化、
+容量性能分析和事故复盘。故障排查先收集最小证据，Evidence Gate 不满足时自动启动隔离的
+Specialist Agent 协作，并把全过程事实写入 Postgres。
 
 [项目视频](https://www.bilibili.com/video/BV182RCBGEod/)
 
@@ -44,14 +43,13 @@ V2 重构在其上提供统一 Capability Planner，将 Fast/Deep 合并为按�
 | 统一 Capability Workflow | Query 理解 → Scope → Capability/Skill/Tool → Evidence → Outcome |
 | 运维知识问答 | 复用 RAG，只写 reference Evidence，不冒充现场状态 |
 | 状态查询与一键巡检 | 结构化 CPU/内存/磁盘/进程快照、阈值判断与 ToolCall 审计 |
-| 自适应故障诊断 | Fast Triage 先取最小证据，Evidence Gate 不满足时保留证据升级 Deep |
+| 自适应故障诊断 | 快速取证后通过 Evidence Gate 决定是否启动 Specialist 多智能体协作 |
 | 只读优化助手 | 基于快照生成优化建议、风险和人工确认要求，不执行任何变更 |
 | 容量与性能分析 | 计算当前 Headroom；缺历史序列时禁止伪造容量预测 |
-| 人工事故闭环 | 确认/纠正根因 → 确认只读计划 → 新快照验证恢复 → 脱敏关闭并生成评测样本 |
+| 持久化事故闭环 | 根因/计划确认 → 新快照验证恢复 → 事务关闭 → Memory/画像/经验/评测样本沉淀 |
 | Skill-first 诊断 | 按主机、网络、容器、数据库/缓存、应用运行时、消息队列或通用 OnCall Playbook 收窄工具范围 |
-| fast / deep 双模式 | fast 走 Plan-Execute-Replan；deep 走隔离专业 Agent 的证据图 |
 | 后台任务链路 | API 快速落库和入队，多个 Worker 通过 Redis Streams 后台消费 |
-| 事实与证据审计 | Postgres 保存事件、任务、AgentRun、ToolCall、Evidence、Approval 和 Report |
+| 事实与证据审计 | Postgres 保存 Workflow、Incident、Event、Decision、AgentRun、ToolCall、Evidence 和学习记录 |
 | RAG 检索 | Parent-Child 切分、Milvus 向量召回、BM25、RRF 融合和可选 Rerank |
 | MCP 工具 | 系统、联网搜索、Windows 日志、网络和 Docker 工具独立运行 |
 | 权限边界 | PermissionMode、ToolMeta、Guardrail 和人工审批共同约束副作用 |
@@ -66,24 +64,20 @@ flowchart TD
     API --> Facts[("Postgres")]
     API --> Queue[("Redis Streams")]
     Queue --> Workers["Background Workers"]
-    Sync --> Runner["Diagnosis Runner"]
-    Workers --> Runner
-    Runner --> Fast["fast graph"]
-    Runner --> Deep["deep graph"]
-    Fast --> RAG["Milvus RAG"]
-    Deep --> RAG
-    Fast --> Tools["MCP / local tools"]
-    Deep --> Tools
-    Runner --> Evidence["Evidence / Report / Wiki"]
+    Sync --> Agent["Unified AIOps Agent"]
+    Workers --> Agent
+    Agent --> Triage["快速证据收集"]
+    Triage --> Gate{"Evidence Gate"}
+    Gate --> Specialists["Specialist Agents"]
+    Gate --> RCA["Evidence Reducer / RCA"]
+    Specialists --> RCA
+    Agent --> RAG["Milvus RAG"]
+    Agent --> Tools["MCP / local tools"]
+    RCA --> Facts
 ```
 
-| 模式 | 流程 | 适合场景 |
-| --- | --- | --- |
-| `fast` | Skill Router → Planner → Executor → Replanner → Report | 快速排查、单类故障、即时 SSE |
-| `deep` | Context → Evidence Plan → 专业 Agent 并行取证 → RCA → Report | 复杂事件、多类证据交叉验证 |
-
-deep 当前包含 MetricAgent、LogAgent、InfraAgent 和 RunbookAgent。Agent 之间不共享中间推理，
-只把压缩后的 Evidence 写回公共状态。完整实现和已知限制见[系统架构](docs/ARCHITECTURE.md)。
+Specialist 层包含 MetricAgent、LogAgent、InfraAgent 和 RunbookAgent。Agent 之间不共享中间推理，
+只把压缩后的 Evidence 写回统一状态。完整实现和边界见[系统架构](docs/ARCHITECTURE.md)。
 
 ## 快速开始
 
@@ -162,7 +156,7 @@ macOS / Linux 也可以使用容器基础设施加本地 Python 进程：
 bash scripts/run_all.sh
 ```
 
-Windows 完整 V3 拓扑建议继续使用 Compose `app` Profile。`run.ps1` 是本地兼容入口，
+Windows 完整拓扑建议使用 Compose `app` Profile。`run.ps1` 是本地兼容入口，
 不会启动完整的 Postgres/后台 Worker 拓扑。
 
 停止服务：
@@ -206,7 +200,7 @@ curl -fsS http://localhost:9900/api/v1/health/ready
 复杂告警诊断：
 
 ```text
-Redis 实例 redis-master-01 内存使用率 98%，客户端连接被强制断开，请用 deep 模式交叉取证。
+Redis 实例 redis-master-01 内存使用率 98%，客户端连接被强制断开，请排查根因并交叉取证。
 ```
 
 模拟 Alertmanager Webhook：
@@ -229,20 +223,17 @@ python scripts/mock_alert.py --list-history
 | 队列与 Worker 状态 | GET | `/api/v1/queue/status` |
 | 诊断任务列表 | GET | `/api/v1/incidents/tasks` |
 | RAG Chat | POST | `/api/v1/chat/stream` |
-| V2 请求理解与任务拆分 | POST | `/api/v1/workflows/prepare` |
-| V2 Capability 列表 | GET | `/api/v1/workflows/capabilities` |
-| V2 二次确认 | POST | `/api/v1/workflows/clarify` |
-| V2 统一能力执行（SSE） | POST | `/api/v1/workflows/execute/stream` |
-| V2 本机只读巡检 | POST | `/api/v1/workflows/execute-local-inspection` |
-| V2 Evidence Quality Gate | POST | `/api/v1/workflows/assess-evidence` |
-| V2 自适应诊断（SSE） | POST | `/api/v1/workflows/adaptive-diagnosis/stream` |
-| V2 只读优化/容量分析 | POST | `/api/v1/workflows/execute-readonly-analysis` |
-| V2 后台执行资格检查 | POST | `/api/v1/workflows/background-eligibility` |
-| V2 初始化事故闭环 | POST | `/api/v1/workflows/lifecycle/initialize` |
-| V2 人工确认诊断 | POST | `/api/v1/workflows/lifecycle/confirm-diagnosis` |
-| V2 人工确认只读计划 | POST | `/api/v1/workflows/lifecycle/confirm-plan` |
-| V2 恢复验证 | POST | `/api/v1/workflows/lifecycle/verify-recovery` |
-| V2 脱敏关闭事故 | POST | `/api/v1/workflows/lifecycle/close` |
+| 请求理解与任务拆分 | POST | `/api/v1/workflows/prepare` |
+| Capability 列表 | GET | `/api/v1/workflows/capabilities` |
+| 二次确认 | POST | `/api/v1/workflows/clarify` |
+| 统一能力执行（SSE） | POST | `/api/v1/workflows/execute/stream` |
+| 读取持久化状态 | GET | `/api/v1/workflows/{run_id}` |
+| 读取审计事件 | GET | `/api/v1/workflows/{run_id}/events` |
+| 初始化事故闭环 | POST | `/api/v1/workflows/lifecycle/initialize` |
+| 人工确认诊断 | POST | `/api/v1/workflows/lifecycle/confirm-diagnosis` |
+| 人工确认只读计划 | POST | `/api/v1/workflows/lifecycle/confirm-plan` |
+| 恢复验证 | POST | `/api/v1/workflows/lifecycle/verify-recovery` |
+| 脱敏关闭事故 | POST | `/api/v1/workflows/lifecycle/close` |
 | Skill 列表 | GET | `/api/v1/skills` |
 | 上传知识文档 | POST | `/api/v1/documents/upload` |
 | 就绪检查 | GET | `/api/v1/health/ready` |
@@ -255,24 +246,25 @@ X-KB-Admin-Token: your-admin-token
 
 完整请求结构以运行中的 OpenAPI 文档为准。
 
-V2 本机巡检采用两步调用：先把“查看本机后台进程和内存占用”提交给 `prepare`，取得
-`phase=ready` 且 `scope.kind=local_host` 的完整 State；再把该 State 提交给
-`execute-local-inspection`。结果包含结构化系统快照、阈值发现、Top 进程、ToolCall 执行状态、
+统一工作流采用服务端状态所有权：先把 Query 提交给 `prepare`，取得 `run_id`、`revision` 和
+规划结果；后续澄清、执行和生命周期操作只提交 `run_id + expected_revision`。结果包含结构化
+系统快照、阈值发现、Top 进程、ToolCall 执行状态、
 带 Scope 的 Evidence 和下一步建议。接口只读，不采集进程命令行或环境变量，也不会自动结束进程。
 `assess-evidence` 再依据现场证据数量、来源多样性、错误比例、Scope 一致性、异常信号和根因
-置信度，确定性返回 `complete / collect_more / escalate_deep / blocked`；升级计划保留父 Run 与
-已有 Evidence ID，避免 Fast 与 Deep 重复丢失上下文。
+置信度，确定性返回 `complete / collect_more / escalate_deep / blocked`；其中
+`escalate_deep` 是兼容保留的内部状态值，对外含义是启动专业 Agent 协作。升级时保留同一 Run
+的已有 Evidence，并将其直接传给 Specialist Agent。
 
-推荐的新入口是两步调用：先向 `prepare` 提交原始 Query；若返回 `clarifying`，通过 `clarify`
-补齐目标；状态为 `ready` 后把完整 State 交给 `execute/stream`。统一执行器按 `capability_id`
-委托已有 RAG、系统巡检、Fast/Deep 或只读分析模块，前端无需直接选择内部 Agent。
+推荐入口是先向 `prepare` 提交原始 Query；若返回 `clarifying`，通过 `clarify` 补齐目标；状态为
+`ready` 后使用 `run_id + expected_revision` 调用 `execute/stream`。数据库执行租约阻止同一 Run
+被并行执行，前端无需选择内部 Agent。
 
 实时故障诊断完成后，Web UI 会显示事故闭环面板。根因和计划必须人工确认；恢复状态由同一
 `TargetScope` 的新结构化快照与诊断基线比较得出，采集失败时结果为 `inconclusive`，不会根据
 报告文字宣称恢复。关闭前需要人工提供脱敏描述，之后才生成评测样本并把经验晋升为
-`verified_knowledge` 候选。
+`verified_knowledge`，同时沉淀成功经验、实体画像和隔离评测样本。
 
-旧 `/aiops/diagnose/submit` 队列仍服务 V3 诊断任务。V2 统一工作流尚未直接入队：本机 Scope
+`/aiops/diagnose/submit` 队列继续服务告警后台诊断。统一工作流尚未直接入队：本机 Scope
 必须绑定目标节点，普通 Worker 会检查到自身容器。`background-eligibility` 会在目标 Agent、
 事实持久化和 Capability Worker 适配器完成前关闭式拒绝提交。
 
@@ -281,9 +273,9 @@ V2 本机巡检采用两步调用：先把“查看本机后台进程和内存�
 ```text
 .
 ├── app/
-│   ├── agents/              # fast 节点和 deep 专业 Agent
+│   ├── agents/              # Triage 节点和 Specialist Agent
 │   ├── api/                 # FastAPI 路由
-│   ├── diagnosis_graphs/    # deep graph
+│   ├── diagnosis_graphs/    # Specialist 证据协作图
 │   ├── orchestration/       # 诊断执行与审计
 │   ├── runtime/             # Harness、权限、审批和工具编排
 │   ├── skills/              # Skill 注册表与 Playbook
@@ -335,9 +327,6 @@ python benchmark/run_benchmark.py fixture --enforce
 - `ragas`、真实诊断、远程 Embedding、Rerank 和联网搜索可能产生费用或发送数据到外部服务。
 - 当前 CORS 允许所有来源，适合本地演示；生产部署必须增加身份认证、来源限制和反向代理策略。
 
-## 版本说明
-
-“V3”表示项目架构的第三代演进：从同步演示链路升级为带后台队列、事实审计和双诊断图的工作台。
 运行时 API 版本仍由 `.env` 中的 `APP_VERSION` 独立配置。
 
 ## License 与来源

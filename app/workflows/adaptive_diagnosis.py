@@ -1,13 +1,17 @@
-"""Fast Triage → Evidence Quality Gate → Deep 的自适应诊断编排。"""
+"""统一故障排查：快速取证 → 质量门 → Specialist 协作诊断。"""
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Callable
 from typing import Any
+
+from loguru import logger
 
 from app.incidents.models import DiagnosisMode
 from app.orchestration.diagnosis_runner import run_diagnosis_graph
 from app.workflows.capabilities import CapabilityId
+from app.workflows.diagnosis_audit import WorkflowDiagnosisAudit
 from app.workflows.evidence_quality import EvidenceGateDecision, assess_evidence_quality
 from app.workflows.memory_policy import attach_memory_write_policy
 from app.workflows.models import (
@@ -25,6 +29,29 @@ DiagnosisRunner = Callable[..., AsyncIterator[dict[str, Any]]]
 
 def _adaptive_event(event_type: str, message: str, **data: Any) -> dict[str, Any]:
     return {"type": event_type, "message": message, "data": data}
+
+
+async def _finish_audit_after_error(
+    audit: WorkflowDiagnosisAudit,
+    *,
+    status: str,
+    error: BaseException,
+) -> None:
+    """异常路径尽力关闭 AgentRun，同时保留原始业务异常。"""
+    try:
+        await asyncio.shield(
+            audit.finish(
+                status=status,
+                error=f"{type(error).__name__}: {error}"[:2000],
+            )
+        )
+    except Exception as audit_error:  # noqa: BLE001 - 不得覆盖原始异常
+        logger.warning(
+            "[workflow-audit] failed to finalize run {}: {}: {}",
+            audit.agent_run_id,
+            type(audit_error).__name__,
+            audit_error,
+        )
 
 
 def _bounded_confidence(value: Any, default: float = 0.8) -> float:
@@ -121,7 +148,11 @@ def _append_runner_evidence(
             )
         )
     elif event_type == "step_complete":
-        preview = str(data.get("result_preview") or event.get("message") or "Fast step completed")
+        preview = str(
+            data.get("result_preview")
+            or event.get("message")
+            or "初步证据收集步骤已完成"
+        )
         state.evidence.append(
             EvidenceItem(
                 run_id=state.run_id,
@@ -144,7 +175,7 @@ async def stream_adaptive_diagnosis(
     if state.capability_id != CapabilityId.ADAPTIVE_DIAGNOSIS:
         raise ValueError("当前 State 未路由到自适应故障诊断")
     if state.scope.kind != ScopeKind.LOCAL_HOST:
-        raise ValueError("旧诊断图尚未接入显式远程 Scope 绑定，当前只开放本机自适应诊断")
+        raise ValueError("远程 Scope 需要绑定 Target Agent；当前自适应诊断只开放本机作用域")
     allowed, reason = can_execute_live_tools(state)
     if not allowed:
         raise PermissionError(reason)
@@ -157,22 +188,33 @@ async def stream_adaptive_diagnosis(
             reason="adaptive_fast_triage_started",
         )
     )
-    yield _adaptive_event("adaptive_start", "开始 Fast Triage", run_id=state.run_id)
+    audit = WorkflowDiagnosisAudit(state)
+    await audit.start()
+    yield _adaptive_event("adaptive_start", "开始快速证据收集", run_id=state.run_id)
 
     fast_report = ""
     fast_error = False
-    async for event in runner(
-        state.query.raw_query,
-        session_id=state.session_id,
-        diagnosis_mode=DiagnosisMode.FAST,
-        cache_reports=False,
-    ):
-        _append_runner_evidence(state, event, mode="fast")
-        if event.get("type") == "report":
-            fast_report = str((event.get("data") or {}).get("report") or "")
-        if event.get("type") == "error":
-            fast_error = True
-        yield _adaptive_event("fast_event", event.get("message", ""), event=event)
+    try:
+        async for event in runner(
+            state.query.raw_query,
+            session_id=state.session_id,
+            diagnosis_mode=DiagnosisMode.FAST,
+            cache_reports=False,
+        ):
+            _append_runner_evidence(state, event, mode="fast")
+            new_evidence_ids = await audit.capture_state_evidence()
+            await audit.record_event(event, new_evidence_ids=new_evidence_ids)
+            if event.get("type") == "report":
+                fast_report = str((event.get("data") or {}).get("report") or "")
+            if event.get("type") == "error":
+                fast_error = True
+            yield _adaptive_event("fast_event", event.get("message", ""), event=event)
+    except asyncio.CancelledError as exc:
+        await _finish_audit_after_error(audit, status="cancelled", error=exc)
+        raise
+    except Exception as exc:
+        await _finish_audit_after_error(audit, status="failed", error=exc)
+        raise
 
     successful_sources = {
         item.source
@@ -187,7 +229,7 @@ async def stream_adaptive_diagnosis(
         triage_confidence = 0.35
     else:
         triage_confidence = 0.0
-    state.outcome.root_cause = "Fast Triage 候选结论" if fast_report else ""
+    state.outcome.root_cause = fast_report[:1000] if fast_report else ""
     state.outcome.confidence = triage_confidence
     assessment = assess_evidence_quality(
         state,
@@ -205,8 +247,20 @@ async def stream_adaptive_diagnosis(
         EvidenceGateDecision.COLLECT_MORE,
     }
     if not needs_deep:
+        state.evidence.append(
+            EvidenceItem(
+                run_id=state.run_id,
+                incident_id=state.incident_id,
+                source="diagnosis_coordinator",
+                type="diagnosis_report",
+                status=EvidenceStatus.REFERENCE,
+                summary="统一故障排查已基于快速取证形成诊断报告。",
+                content={"execution_path": "triage_only"},
+                confidence=triage_confidence,
+            )
+        )
         state.outcome.report_markdown = fast_report
-        state.outcome.summary = "Fast Triage 证据满足最低质量要求"
+        state.outcome.summary = "快速取证已满足诊断证据质量要求"
         state.outcome.next_action = "输出诊断报告"
         validate_phase_transition(state.phase, WorkflowPhase.COMPLETED)
         state.phase = WorkflowPhase.COMPLETED
@@ -218,10 +272,12 @@ async def stream_adaptive_diagnosis(
             )
         )
         attach_memory_write_policy(state)
+        await audit.finish(status="succeeded")
         yield _adaptive_event(
             "adaptive_complete",
             state.outcome.summary,
             effective_mode="fast",
+            execution_path="triage_only",
             state=state.model_dump(mode="json"),
         )
         return
@@ -229,30 +285,80 @@ async def stream_adaptive_diagnosis(
     child_run_id = assessment.escalation.child_run_id if assessment.escalation else ""
     yield _adaptive_event(
         "deep_escalation",
-        "Fast 证据不足，保留已有 Evidence 并升级 Deep",
+        "当前证据不足，保留已有 Evidence 并启动 Specialist 协作诊断",
         parent_run_id=state.run_id,
         child_run_id=child_run_id,
         preserved_evidence_ids=[item.id for item in state.evidence],
     )
     deep_report = ""
     deep_error = False
-    async for event in runner(
-        state.query.raw_query,
-        session_id=state.session_id,
-        diagnosis_mode=DiagnosisMode.DEEP,
-        cache_reports=False,
-    ):
-        _append_runner_evidence(state, event, mode="deep")
-        if event.get("type") == "report":
-            deep_report = str((event.get("data") or {}).get("report") or "")
-        if event.get("type") == "error":
-            deep_error = True
-        yield _adaptive_event("deep_event", event.get("message", ""), event=event)
+    deep_root_cause = ""
+    deep_confidence = 0.0
+    remediation_recommendations: list[str] = []
+    seed_evidence = [
+        {
+            "source": item.source,
+            "type": item.type,
+            "summary": item.summary,
+            "content": item.content,
+            "score": item.confidence,
+            "metadata": {
+                **item.metadata,
+                "workflow_evidence_id": item.id,
+                "status": item.status.value,
+                "seeded_from_triage": True,
+            },
+        }
+        for item in state.evidence
+        if item.status in {EvidenceStatus.OBSERVED, EvidenceStatus.REFERENCE}
+    ]
+    verified_memories = [
+        item
+        for item in state.memory.recalled_items
+        if item.get("tier") == "verified_knowledge" and item.get("status") == "verified"
+    ]
+    try:
+        async for event in runner(
+            state.query.raw_query,
+            session_id=state.session_id,
+            diagnosis_mode=DiagnosisMode.DEEP,
+            cache_reports=False,
+            initial_evidence=seed_evidence,
+            recalled_memories=verified_memories,
+            incident_group_id=state.incident_group_id,
+            incident_id=state.incident_id,
+            persist_legacy_wiki=False,
+        ):
+            _append_runner_evidence(state, event, mode="deep")
+            new_evidence_ids = await audit.capture_state_evidence()
+            await audit.record_event(event, new_evidence_ids=new_evidence_ids)
+            if event.get("type") == "report":
+                deep_report = str((event.get("data") or {}).get("report") or "")
+            if event.get("type") == "error":
+                deep_error = True
+            if event.get("type") == "rca":
+                rca = (event.get("data") or {}).get("rca") or {}
+                deep_root_cause = str(rca.get("root_cause") or "")
+                deep_confidence = _bounded_confidence(rca.get("confidence"), 0.7)
+            if event.get("type") == "remediation":
+                remediation = (event.get("data") or {}).get("remediation") or {}
+                remediation_recommendations = [
+                    str(item)
+                    for item in list(remediation.get("steps") or [])
+                    if str(item).strip()
+                ]
+            yield _adaptive_event("deep_event", event.get("message", ""), event=event)
+    except asyncio.CancelledError as exc:
+        await _finish_audit_after_error(audit, status="cancelled", error=exc)
+        raise
+    except Exception as exc:
+        await _finish_audit_after_error(audit, status="failed", error=exc)
+        raise
 
     if deep_error or not deep_report:
         validate_phase_transition(state.phase, WorkflowPhase.FAILED)
         state.phase = WorkflowPhase.FAILED
-        state.terminal_reason = "Deep 诊断未生成可验证报告"
+        state.terminal_reason = "Specialist 协作诊断未生成可验证报告"
         state.transitions.append(
             WorkflowTransition(
                 from_phase=WorkflowPhase.EXECUTING,
@@ -260,6 +366,7 @@ async def stream_adaptive_diagnosis(
                 reason="deep_diagnosis_failed_or_empty",
             )
         )
+        await audit.finish(status="failed", error=state.terminal_reason)
         yield _adaptive_event(
             "adaptive_failed",
             state.terminal_reason,
@@ -279,9 +386,9 @@ async def stream_adaptive_diagnosis(
             type="diagnosis_report",
             status=EvidenceStatus.REFERENCE,
             summary=(
-                "Deep 诊断已生成报告，结构化 Evidence 已并入统一状态。"
+                "Specialist 协作诊断已生成报告，结构化 Evidence 已并入统一状态。"
                 if has_structured_deep_evidence
-                else "Deep 诊断已生成报告；内部 Evidence 仍由旧图审计链保存。"
+                else "Specialist 协作诊断已生成报告，部分内部 Evidence 由运行审计链保存。"
             ),
             content={"parent_run_id": state.run_id, "child_run_id": child_run_id},
             confidence=0.7,
@@ -291,8 +398,11 @@ async def stream_adaptive_diagnosis(
             },
         )
     )
+    state.outcome.root_cause = deep_root_cause or deep_report[:1000]
+    state.outcome.confidence = deep_confidence or 0.7
+    state.outcome.recommendations = remediation_recommendations
     state.outcome.report_markdown = deep_report
-    state.outcome.summary = "已从 Fast Triage 自适应升级 Deep 并形成报告"
+    state.outcome.summary = "已完成 Specialist 多智能体协作诊断并形成报告"
     state.outcome.next_action = "人工确认根因与只读处置建议"
     state.outcome.requires_escalation = False
     validate_phase_transition(state.phase, WorkflowPhase.COMPLETED)
@@ -305,10 +415,12 @@ async def stream_adaptive_diagnosis(
         )
     )
     attach_memory_write_policy(state)
+    await audit.finish(status="succeeded")
     yield _adaptive_event(
         "adaptive_complete",
         state.outcome.summary,
         effective_mode="deep",
+        execution_path="specialist_escalated",
         child_run_id=child_run_id,
         state=state.model_dump(mode="json"),
     )

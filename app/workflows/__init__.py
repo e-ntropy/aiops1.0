@@ -1,4 +1,4 @@
-"""AIOps V2 统一工作流契约与准备阶段。"""
+"""统一 AIOps Agent 的工作流契约与执行能力。"""
 
 from app.workflows.models import (
     EvidenceItem,

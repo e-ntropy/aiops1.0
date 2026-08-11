@@ -1,4 +1,4 @@
-"""Evidence Quality Gate：决定结束、补证据或升级 Deep，不让模型自行选模式。"""
+"""Evidence Quality Gate：决定结束、补证据或启动专业协作，不让模型自行选模式。"""
 
 from __future__ import annotations
 

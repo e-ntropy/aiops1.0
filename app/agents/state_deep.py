@@ -36,6 +36,7 @@ class DeepDiagnosisState(TypedDict, total=False):
     incident_group_id: str
     incident_id: str
     task_id: str
+    recalled_memories: List[Dict[str, Any]]
 
     # —— ③ EvidencePlan: 派哪几个专业 subagent + 取证策略 ——
     evidence_plan: Dict[str, Any]

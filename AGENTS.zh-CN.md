@@ -26,9 +26,8 @@ Kimi Code 等编码 Agent。英文 `AGENTS.md` 是操作权威，`CLAUDE.md` 为
 场景。系统接收用户故障描述或 Alertmanager 事件，选择 Skill 排障剧本，通过 RAG 和 MCP
 工具收集证据，并输出可追溯的 Markdown 报告。
 
-当前产品代际称为 **V3**。V3 增加后台任务链路、Redis Streams、Worker、Postgres 事实库、
-fast/deep 双诊断模式、证据审计、审批结构、LLM Wiki、检索评测和并发测试。它是参考实现，
-不等同于生产就绪承诺。
+产品采用统一的服务端工作流，覆盖 Query 理解、能力规划、证据采集、专业诊断、人工确认、
+恢复验证、事故关闭与学习沉淀；Postgres 是持久事实权威。它是参考实现，不等同于生产就绪承诺。
 
 主要干系人是仓库所有者和维护者；次要干系人是运行演示的使用者，以及需要可复现项目事实的
 贡献者。
@@ -47,7 +46,7 @@ fast/deep 双诊断模式、证据审计、审批结构、LLM Wiki、检索评�
 
 - 容器基线是 Python 3.12（见 `Dockerfile`）。仓库没有声明更宽 Python 兼容范围的包元数据。
 - FastAPI 和 Uvicorn 提供 HTTP/SSE 应用。
-- LangGraph 执行 fast 与 deep 诊断图。
+- LangGraph 在统一诊断中执行初步取证与隔离的专业 Agent 阶段。
 - Milvus 保存向量，Redis 保存队列和运行态协调，Postgres 保存事件与诊断事实。
 - MCP 服务提供系统、联网搜索、Windows 事件日志、网络和 Docker 工具。
 - `open-webSearch-main/` 是采用 Apache-2.0 的第三方内嵌项目，拥有独立 Node.js 构建和文档。
@@ -85,7 +84,7 @@ bash scripts/run_all.sh
 bash scripts/stop_all.sh
 ```
 
-Windows `run.ps1` 是本地兼容入口，不会启动完整 V3 Postgres/Worker 拓扑；完整环境应使用
+Windows `run.ps1` 是本地兼容入口，不会启动完整 Postgres/Worker 拓扑；完整环境应使用
 Compose 的 `app` Profile。
 
 知识库导入与评测：
@@ -112,11 +111,11 @@ python benchmark/run_benchmark.py workflow
 | `docs/PRESSURE_TEST_REPORT.md` | 特定历史环境下的压测证据 |
 | `app/api/` | HTTP/SSE 入口和请求响应契约 |
 | `app/services/` | 诊断、RAG Chat 等用例服务 |
-| `app/orchestration/` | 诊断模式选择、执行、审计和事件转换 |
-| `app/agents/` | fast 图节点和 deep 专业 Agent |
-| `app/diagnosis_graphs/` | deep 诊断图装配与证据归并 |
+| `app/orchestration/` | 诊断执行、审计和事件转换 |
+| `app/agents/` | 初步取证节点和隔离的专业 Agent |
+| `app/diagnosis_graphs/` | 专业协作图装配与证据归并 |
 | `app/runtime/` | Agent Harness、权限、审批、工具编排、预算和状态转换 |
-| `app/workflows/` | V2 Capability 规划/执行、Query/Scope/Evidence 契约、自适应诊断、只读分析、事故生命周期、后台资格、Memory、兜底与不变量 |
+| `app/workflows/` | 统一能力执行、服务端状态、Postgres Repository、Query/Scope/Evidence 契约、诊断、生命周期、Memory、兜底与不变量 |
 | `app/skills/` | Skill 模型、加载器、注册表、Playbook 和 Skill 文档 |
 | `app/tools/`、`mcp_servers/` | 工具元数据、本地工具和外部 MCP 进程边界 |
 | `app/incidents/`、`app/evidence/`、`app/db/` | 事件、证据、持久化和 Schema |
@@ -136,16 +135,16 @@ python benchmark/run_benchmark.py workflow
 详细运行和数据流见 `docs/ARCHITECTURE.md`。编辑代码时必须保留以下紧凑边界：
 
 - API 负责接入和校验。高并发诊断应先持久化并入队，不能长期占用请求进程执行。
-- `fast` 使用 Skill Router -> Planner -> Executor -> Replanner -> Report。
-- `deep` 使用事件上下文 -> 证据计划 -> 隔离专业 Agent 扇出 -> 证据归并 -> RCA ->
-  处置建议 -> 报告。
+- 统一诊断使用 Query/Scope 规划 -> 初步证据 -> 确定性证据门控 -> 按需隔离专业 Agent 扇出 ->
+  证据归并 -> RCA -> 只读处置建议 -> 人工确认 -> 恢复验证。
 - 专业 Agent 只返回压缩后的 Evidence，私有 LLM 中间对话不能写入共享图状态。
-- Postgres 是 alerts、groups、tasks、agent runs、tool calls、evidence、approvals 和 reports
-  的事实权威。Redis 负责临时队列和协调状态，不是持久事实库。
+- Postgres 是告警、分组、任务、Workflow Run/Event、Agent Run、Tool Call、Evidence、人工决策、
+  Approval、Report、Memory、画像、经验和评测样本的事实权威。Redis 负责临时队列和协调状态，
+  不是持久事实库。
 - 可观察状态和明确证据决定完成；模型文本本身不能证明工具、任务或处置已经成功。
 - 工具执行必须保留 Skill、Permission、Guardrail、审批和审计边界。只读工具可由运行时
   策略补充；写入、通知和高风险工具需要明确授权。
-- V2 本机工作流必须绑定目标执行节点，不能交给本地系统属于其他证据目标的任意 Worker。
+- 本机工作流必须绑定目标执行节点，不能交给本地系统属于其他证据目标的任意 Worker。
 - `PERMISSION_MODE=bypass` 只允许开发使用，不能推荐给公开或生产部署。
 - 可重试副作用必须具备幂等性，或明确的不确定结果恢复路径。队列 ACK、重试、Pending
   回收和 DLQ 必须保持可区分。

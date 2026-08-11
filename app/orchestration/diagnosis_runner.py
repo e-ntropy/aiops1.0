@@ -1,8 +1,8 @@
 """共享诊断图运行器。
 
-API 与 Worker 调用方的统一入口: fast / deep 图都从这里 astream, 输出结构化运行时事件。
+API 与 Worker 调用方的统一入口: 诊断阶段从这里 astream, 输出结构化运行时事件。
 本模块不知道 SSE、HTTP、Redis 队列消费或 Postgres 审计 —— 那些是 services 层 / Worker
-层的事。诊断收尾时把报告 ingest 进 LLM Wiki 是唯一的副作用 (best-effort)。
+层的事。未经人工确认的报告默认不再写入长期知识。
 """
 
 from __future__ import annotations
@@ -14,10 +14,9 @@ from typing import Any
 
 from loguru import logger
 
-from app.runtime.stream_sink import set_sink
 from app.incidents.models import DiagnosisMode
-from app.wiki.store import ingest_diagnosis
 from app.runtime.agent_harness import HarnessUsageStats, get_agent_harness
+from app.runtime.stream_sink import set_sink
 # chat_memory 在 _cache_report 内 lazy import,避免 services -> orchestration -> services 循环。
 
 RuntimeEvent = dict[str, Any]
@@ -104,6 +103,12 @@ async def run_diagnosis_graph(
     diagnosis_mode: str | DiagnosisMode = DiagnosisMode.FAST,
     cache_reports: bool = False,
     alert_signature: str = "",
+    initial_evidence: list[dict[str, Any]] | None = None,
+    recalled_memories: list[dict[str, Any]] | None = None,
+    incident_group_id: str = "",
+    incident_id: str = "",
+    task_id: str = "",
+    persist_legacy_wiki: bool = False,
 ) -> AsyncIterator[RuntimeEvent]:
     """跑 fast 或 deep LangGraph 诊断图, 产 SSE 事件流。
 
@@ -117,7 +122,10 @@ async def run_diagnosis_graph(
         alert_signature: Same-incident fingerprint computed by the caller from
             the structured alert payload. Threaded into the graph state so the
             LLM Wiki recall_block can do direct-page lookup
-            (services/<service>.md, patterns/<sig>.md). Manual/SSE callers leave it empty.
+            structured payload. Manual/SSE callers leave it empty.
+        initial_evidence: Triage 已采集的结构化 Evidence；Specialist 阶段继续使用。
+        recalled_memories: Postgres 按 Scope 过滤后的 verified memory 摘要。
+        persist_legacy_wiki: 兼容开关，默认关闭；可信经验由事故关闭事务写入 Postgres。
     """
     requested_mode, effective_mode, group_agent_reserved = resolve_effective_mode(
         diagnosis_mode
@@ -175,6 +183,16 @@ async def run_diagnosis_graph(
         "requested_diagnosis_mode": requested_mode.value,
         "alert_signature": alert_signature,
     }
+    if effective_mode == DiagnosisMode.DEEP:
+        graph_input.update(
+            {
+                "incident_group_id": incident_group_id,
+                "incident_id": incident_id,
+                "task_id": task_id,
+                "evidences": list(initial_evidence or []),
+                "recalled_memories": list(recalled_memories or []),
+            }
+        )
     final_report = ""  # 经验 Wiki 写钩子用: 捕获本次诊断产出的最终报告文本
 
     async def _graph_runner() -> None:
@@ -269,9 +287,10 @@ async def run_diagnosis_graph(
         )
         yield make_event("complete", "diagnosis_complete", message="诊断流程完成")
 
-        # LLM Wiki 写钩子: 诊断产出报告后 ingest 进 wiki (LLM 合并相关页, best-effort 自吞异常)。
-        # 这是 fast/deep/worker 三条路径的单一汇聚点。
-        if final_report:
+        # 仅为兼容历史调用保留显式开关。默认由事故关闭事务晋升 Postgres Memory。
+        if final_report and persist_legacy_wiki:
+            from app.wiki.store import ingest_diagnosis
+
             await ingest_diagnosis(
                 query=query,
                 report_text=final_report,
@@ -423,6 +442,12 @@ async def _convert_node_event(
                 agent=node_name,
                 source=str(ev.get("source", "")),
                 evidence_type=str(ev.get("type", "")),
+                status="reference",
+                confidence=float(ev.get("score") or 0.5),
+                metadata={
+                    **dict(ev.get("metadata") or {}),
+                    "specialist_summary": True,
+                },
             )
 
     elif node_name == "evidence_reducer":

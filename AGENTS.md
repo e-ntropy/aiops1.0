@@ -35,11 +35,11 @@ AIOps diagnosis workbench for OnCall and SRE scenarios. It accepts user reports
 or Alertmanager events, selects a Skill playbook, gathers evidence through RAG
 and MCP tools, and emits traceable Markdown reports.
 
-The current product generation is called **V3**. V3 adds a background task
-pipeline, Redis Streams, worker processes, Postgres facts, fast/deep diagnosis
-modes, evidence audit records, approval structures, an LLM Wiki, retrieval
-evaluation, and concurrency testing. It is a reference implementation, not a
-claim of production readiness.
+The product uses one server-owned workflow for query understanding, capability
+planning, evidence collection, specialist diagnosis, human confirmation,
+recovery verification, incident closure, and learning. Postgres is the durable
+fact authority. It is a reference implementation, not a claim of production
+readiness.
 
 Primary stakeholder: the repository owner and maintainer. Secondary stakeholders
 are users who run the demo and contributors who need reproducible project facts.
@@ -63,7 +63,7 @@ durable detail that cannot fit this orientation map in
 - Python 3.12 is the container baseline (`Dockerfile`). The repository has no
   package metadata declaring a wider supported Python range.
 - FastAPI and Uvicorn provide the HTTP/SSE application.
-- LangGraph runs the fast and deep diagnosis graphs.
+- LangGraph runs triage and isolated specialist stages inside unified diagnosis.
 - Milvus stores vectors; Redis stores queue/runtime coordination; Postgres stores
   incident and diagnosis facts.
 - MCP services expose system, web search, Windows event log, network, and Docker
@@ -108,7 +108,7 @@ bash scripts/stop_all.sh
 ```
 
 The Windows `run.ps1` launcher is a local compatibility entry point. It does not
-start the complete V3 Postgres/worker topology; use the Compose `app` profile for
+start the complete Postgres/worker topology; use the Compose `app` profile for
 the full stack.
 
 Knowledge-base ingestion and evaluation:
@@ -136,11 +136,11 @@ gate; confirm credentials, cost, data scope, and service readiness first.
 | `docs/PRESSURE_TEST_REPORT.md` | Historical environment-specific pressure-test evidence |
 | `app/api/` | HTTP/SSE ingress and request/response contracts |
 | `app/services/` | Use-case services such as diagnosis and RAG chat |
-| `app/orchestration/` | Diagnosis-mode selection, execution, audit, and event conversion |
-| `app/agents/` | Fast graph nodes and deep specialist agents |
-| `app/diagnosis_graphs/` | Deep diagnosis graph assembly and evidence reduction |
+| `app/orchestration/` | Diagnosis execution, audit, and event conversion |
+| `app/agents/` | Triage nodes and isolated specialist agents |
+| `app/diagnosis_graphs/` | Specialist graph assembly and evidence reduction |
 | `app/runtime/` | Agent harness, permissions, approvals, tool orchestration, budgets, and transitions |
-| `app/workflows/` | V2 capability planning/execution, query/scope/evidence contracts, adaptive diagnosis, read-only analysis, incident lifecycle, background eligibility, memory, fallbacks, and invariants |
+| `app/workflows/` | Unified capability execution, server-owned state, Postgres repository, query/scope/evidence contracts, diagnosis, lifecycle, memory, fallbacks, and invariants |
 | `app/skills/` | Skill models, loader, registry, playbooks, and Skill documentation |
 | `app/tools/`, `mcp_servers/` | Tool metadata, local tools, and external MCP process boundaries |
 | `app/incidents/`, `app/evidence/`, `app/db/` | Incident, evidence, persistence, and schema ownership |
@@ -163,20 +163,21 @@ are the compact boundaries an agent must preserve while editing:
 
 - The API accepts and validates work. High-concurrency diagnosis should be
   persisted and queued instead of executed synchronously in the request process.
-- `fast` uses Skill Router -> Planner -> Executor -> Replanner -> Report.
-- `deep` uses incident context -> evidence plan -> isolated specialist fan-out ->
-  evidence reduction -> RCA -> remediation proposal -> report.
+- Unified diagnosis uses query/scope planning -> triage evidence -> deterministic
+  evidence gate -> optional isolated specialist fan-out -> evidence reduction ->
+  RCA -> read-only remediation proposal -> human confirmation -> verification.
 - Specialist agents return compressed Evidence. Their private intermediate LLM
   conversation must not become shared graph state.
-- Postgres is the fact authority for alerts, groups, tasks, agent runs, tool
-  calls, evidence, approvals, and reports. Redis owns transient queue and
+- Postgres is the fact authority for alerts, groups, tasks, workflow runs/events,
+  agent runs, tool calls, evidence, human decisions, approvals, reports, memory,
+  profiles, experiences, and evaluation samples. Redis owns transient queue and
   coordination state, not durable facts.
 - Observable state and explicit evidence determine completion. Model text alone
   is not proof that a tool, task, or remediation succeeded.
 - Tool execution must retain the Skill, permission, guardrail, approval, and
   audit boundaries. Read-only tools may be added by runtime policy; write,
   notification, and high-risk tools require explicit authorization.
-- Local-host V2 workflows require target execution affinity. Do not enqueue them
+- Local-host workflows require target execution affinity. Do not enqueue them
   to an arbitrary Worker whose local system is a different evidence target.
 - `PERMISSION_MODE=bypass` is development-only. Do not recommend it for a public
   or production deployment.

@@ -83,9 +83,9 @@ _CAPABILITIES = (
     CapabilityDefinition(
         id=CapabilityId.ADAPTIVE_DIAGNOSIS,
         display_name="自适应故障诊断",
-        description="Fast Triage 先收集最小证据，质量不足时保留证据升级 Deep。",
+        description="先收集最小证据，质量不足时在同一 Run 内启动专业 Agent 协作。",
         intents=[WorkflowIntent.FAULT_DIAGNOSIS],
-        execution_strategy="fast_triage_evidence_gate_deep",
+        execution_strategy="triage_evidence_gate_specialist",
         skill_candidates=[
             "host_resource_diagnosis",
             "network_diagnosis",
@@ -109,7 +109,7 @@ _CAPABILITIES = (
             "docker_inspect",
         ],
         requires_live_scope=True,
-        fallback_strategy="Fast 失败或证据不足时升级 Deep；Deep 不可用则输出证据缺口",
+        fallback_strategy="初步取证失败或证据不足时启动专业协作；协作不可用则输出证据缺口",
     ),
     CapabilityDefinition(
         id=CapabilityId.READONLY_OPTIMIZATION,
@@ -149,10 +149,10 @@ _CAPABILITIES = (
     CapabilityDefinition(
         id=CapabilityId.EVALUATION,
         display_name="诊断评测",
-        description="运行可复现的路由、检索与诊断评测。",
+        description="汇总版本化评测集与事故闭环样本，并提供可复现离线命令。",
         intents=[WorkflowIntent.EVALUATION],
-        execution_strategy="offline_evaluation",
-        fallback_strategy="外部 Provider 未就绪时仅运行离线确定性评测",
+        execution_strategy="evaluation_inventory",
+        fallback_strategy="Postgres 不可用时关闭式失败；不在在线 Agent 内触发付费评测",
     ),
 )
 

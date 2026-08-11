@@ -52,7 +52,7 @@ class AgentRunRepository:
                     id, task_id, incident_group_id, incident_id, agent_name,
                     agent_version, status, input_ref, started_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, 'running', $7, now())
+                VALUES ($1, NULLIF($2, ''), $3, $4, $5, $6, 'running', $7, now())
                 """,
                 run_id,
                 task_id,
@@ -126,7 +126,7 @@ class AgentRunRepository:
                     id, agent_run_id, task_id, incident_group_id, tool_name,
                     status, args, result_ref, elapsed_ms, error, finished_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, now())
+                VALUES ($1, $2, NULLIF($3, ''), $4, $5, $6, $7::jsonb, $8, $9, $10, now())
                 """,
                 tool_call_id,
                 agent_run_id,
@@ -169,4 +169,3 @@ class AgentRunRepository:
 
 
 agent_run_repository = AgentRunRepository()
-

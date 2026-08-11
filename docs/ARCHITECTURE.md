@@ -1,297 +1,156 @@
 # 系统架构
 
-本文承载无法简洁放入根级运行地图的长期架构细节，描述当前代码已经实现的架构、边界和限制。
-Agent 导航和关键编辑边界由 [AGENTS.md](../AGENTS.md) 维护；用户价值、安装和快速开始由
-[README](../README.md) 维护；并发验证步骤由
-[并发测试指南](CONCURRENCY_TEST_GUIDE.md) 维护；历史压测结果由
-[压测报告](PRESSURE_TEST_REPORT.md) 维护。架构事实变化时应在同一次修改中更新对应的信息
-所有者，并通过链接引用，避免重复维护同一事实。
+## 1. 产品目标
 
-## 1. 系统定位
+本项目是面向 OnCall / SRE 场景的多智能体 AIOps 诊断工作台。用户可以从运维知识咨询开始，
+进一步查询授权目标的真实状态；异常会进入统一故障诊断链路，形成结构化证据、根因和只读处置
+计划；人工确认后重新采集同一作用域的数据验证恢复；事故关闭时把脱敏知识、画像、成败经验和
+评测样本一次性沉淀。整个链路以可观察事实为完成依据，不以模型文字代替工具成功、恢复或审批。
 
-Multi-Agent AIOps Platform V3 是面向 OnCall / SRE 场景的参考实现。它把用户故障描述或
-Alertmanager 告警转换为诊断任务，通过 Skill、RAG 和 MCP 工具收集证据，并输出可追溯报告。
+系统是公开参考实现，不代表已经完成企业生产环境中的身份、网络、可用性和合规认证。
 
-V3 解决的是演示型 Agent 经常缺失的工程边界：
-
-- API 接入与重诊断执行分离
-- Redis Streams 队列削峰与 Worker 后台消费
-- Postgres 事实记录和证据审计
-- fast / deep 两条诊断图
-- 全局并发槽、限流、重试与 DLQ
-- 工具权限、Guardrail 和人工审批结构
-- 可复现的检索评测与并发测试
-
-它仍是个人维护的参考工程，不代表已经完成生产环境所需的认证、多租户、细粒度授权、完整测试、
-高可用部署和灾备设计。
-
-## 2. 系统上下文
-
-### V2 渐进式重构边界
-
-V2 不直接删除 V3 的 fast/deep API，而是在 `app/workflows/` 建立共享层，把知识问答、状态查询、
-巡检、自适应故障诊断、只读优化和容量性能分析迁移到统一契约。当前主链路是：
-
-```text
-Raw Query
-    -> QueryUnderstanding (保留原文、改写、Intent、Goals、Subtasks、风险)
-    -> Clarification Loop (最多两轮，缺 Scope 或高风险时暂停)
-    -> TargetScope (environment/resource/time range)
-    -> Capability Planner (执行策略、候选 Skill、只读 Tool 白名单)
-    -> WorkflowState (统一 Evidence、Failure、Budget、Memory、Transition)
-    -> Capability Executor
-       -> RAG Knowledge / Status / Inspection / Read-only Analysis
-       -> Fast Triage -> Evidence Quality Gate -> Deep (按需)
-    -> Evidence + Outcome
-    -> Human Diagnosis Confirmation
-    -> Read-only Remediation/Verification Plan Confirmation
-    -> Recovery Verification -> Close -> Memory/Eval Feedback
-```
-
-关键不变量：
-
-- 远程目标不明确时不得用运行 Agent 的本机数据代替；
-- `observed` Evidence 必须绑定已验证的 `TargetScope`，知识检索只能标为 reference；
-- Query 改写不得扩大用户授权，高风险意图只能保持或升级风险等级；
-- Skill 只能推荐工具，代码层 Permission/Scope/Approval 才能授权执行；
-- 未经人工确认、恢复验证、事故关闭和脱敏的经验只能进入 Candidate Memory，不能晋升为可信知识。
-
-`POST /api/v1/workflows/prepare` 暴露准备阶段；`POST /api/v1/workflows/clarify`
-接受状态和用户补充，重新理解 Query 并解析 Scope；
-`POST /api/v1/workflows/execute-local-inspection` 仅接受 `ready + local_host + validated`
-状态，采集 CPU、内存、Swap、磁盘和 Top 进程的结构化快照。采集不读取命令行和环境变量，
-超时按 Budget 有限重试，关键数据源耗尽重试后转为 `failed`，不会由模型补写现场结论。
-`POST /api/v1/workflows/execute/stream` 是六类核心能力的统一 SSE 入口。知识问答禁用现场 MCP
-工具；状态和巡检只允许已验证本机 Scope；优化和容量分析只生成建议；自适应诊断把 Fast
-ToolCall 适配为 Scope Evidence，模型步骤只标为 reference，质量不足再升级 Deep。
-
-`POST /api/v1/workflows/assess-evidence` 实现确定性质量门契约。异常或故障只有单一
-现场来源时生成 Deep 子 Run 计划，并保留父 `run_id` 和已有 Evidence ID；现场 Evidence 与
-当前 Scope 不一致时直接阻断；数据源错误超过一半时先要求替代来源。V2 自适应入口已经接线；
-旧 `/aiops/diagnose` 为兼容仍保留显式 fast/deep 模式。远程自适应诊断在旧图尚未支持显式
-Scope 绑定前关闭式拒绝，目前只开放本机目标。
-
-故障诊断完成后，`app/workflows/incident_lifecycle.py` 管理独立的生命周期子状态：人工确认或
-纠正根因、确认只读验证计划、采集同 Scope 的新快照、验证恢复、脱敏关闭、生成评测样本并
-触发 Memory 晋升。恢复采集复用统一 `ToolCallEnvelope`、Budget、有限重试和 `FailureRecord`；
-关键数据源耗尽重试时进入 `inconclusive`。建议动作固定为不可执行，只有新快照采集属于允许的
-只读验证。Web UI 已接入这条人工闭环。
-
-当前生命周期状态通过 API 请求中的 `WorkflowState` 往返，尚未写入 Postgres，也没有处理多端
-并发版本冲突；因此它是可演示的状态机契约，不是完整的持久化事故管理实现。
+## 2. 统一执行链路
 
 ```mermaid
 flowchart TD
-    User["用户 / Web UI"] --> API["FastAPI API"]
-    Alertmanager --> API
-
-    API --> Sync["同步 SSE 诊断"]
-    API --> Facts[("Postgres 事实库")]
-    API --> Queue[("Redis Streams")]
-
-    Queue --> W1["Worker 1"]
-    Queue --> W2["Worker 2"]
-    Queue --> W3["Worker 3"]
-
-    Sync --> Runner["Diagnosis Runner"]
-    W1 --> Runner
-    W2 --> Runner
-    W3 --> Runner
-
-    Runner --> Fast["fast graph"]
-    Runner --> Deep["deep graph"]
-
-    Fast --> RAG["Milvus + BM25 + Rerank"]
-    Deep --> RAG
-    Fast --> MCP["MCP / local tools"]
-    Deep --> MCP
-
-    Runner --> Facts
-    Runner --> Wiki["LLM Wiki"]
-    Runner --> Report["Markdown 报告"]
+    Q["用户 Query / Alert"] --> U["Query Understanding"]
+    U --> C{"信息是否充分"}
+    C -->|否| Clarify["最多两轮二次确认"]
+    Clarify --> U
+    C -->|是| Scope["Target Scope 校验"]
+    Scope --> Plan["Capability / Skill / Tool Plan"]
+    Plan --> Exec["Agent Harness 执行"]
+    Exec --> Evidence["结构化 Evidence / ToolCall / Failure"]
+    Evidence --> Gate{"Evidence Quality Gate"}
+    Gate -->|需要专业协作| Specialists["隔离 Specialist Agents"]
+    Specialists --> Reduce["Evidence Reducer / RCA"]
+    Gate -->|证据充分| Reduce
+    Reduce --> HITL["根因与只读计划人工确认"]
+    HITL --> Verify["同一 Scope 重新取证"]
+    Verify --> Close{"恢复是否有事实证明"}
+    Close -->|是| Learn["事务关闭与学习沉淀"]
+    Close -->|否/不确定| Exec
 ```
 
-### 两种接入路径
+对外只有一个 `WorkflowState` 和一个推荐执行入口。内部的快速取证、证据门控、Metric/Log/Infra/
+Runbook 专业协作是同一 Run 的不同阶段；初步证据会作为种子 Evidence 进入专业阶段，专业 Agent
+只返回压缩证据，不共享私有推理上下文。
 
-| 路径 | 入口 | 适用场景 | 执行位置 |
-| --- | --- | --- | --- |
-| 同步诊断 | `POST /api/v1/aiops/diagnose` | 少量即时交互，需要 SSE 过程事件 | API 进程 |
-| 后台诊断 | `POST /api/v1/aiops/diagnose/submit` 或 Alertmanager Webhook | 并发、告警洪峰、需要任务历史 | Redis 队列后的 Worker |
+统一能力包括：知识问答、系统状态、一键巡检、自适应故障诊断、只读优化、容量性能分析、事故
+复盘和评测资产摘要。知识库内容只能作为 `reference`；只有绑定已校验 `TargetScope` 的工具结果
+可以标记为 `observed`。
 
-两条路径复用 `app/orchestration/diagnosis_runner.py`，但后台路径会先把任务事实写入 Postgres，
-再通过 Redis Streams 交给 Worker。
+## 3. 状态所有权与并发约束
 
-V2 统一工作流不复用上述提交入口。`background-eligibility` 会检查执行位置：本机现场能力必须
-交给绑定 `target_id` 的节点 Agent，不能由任意 Worker 执行；知识问答在语义上可后台化，但
-Capability Worker 适配器尚未落地。目标架构要求 Postgres 保存脱敏请求与状态事实，Redis 只传
-`task_id`、`incident_id` 和路由元数据，禁止复制完整 WorkflowState 作为事实来源。
+客户端先调用 `POST /api/v1/workflows/prepare`，后续请求只提交 `run_id + expected_revision`，
+不回传并覆盖完整状态。服务端从 Postgres 加载权威状态并使用 Compare-And-Swap 更新：
 
-## 3. fast 诊断图
+- `workflow_runs.state` 保存完整快照，`revision` 是乐观锁版本。
+- 每次成功转换都追加 `workflow_events`，用于还原时间线。
+- 执行前领取数据库 Lease；同一 Run 只能有一个未过期执行者。
+- 版本不一致返回 HTTP 409，避免浏览器多标签、重试或并发请求静默覆盖。
+- API 断开会尝试记录取消；可重试失败记录 attempt、fallback 和错误类别。
 
-```text
-Skill Router
-    -> Planner
-    -> Executor
-    -> Replanner
-    -> Report
+`WorkflowState` 还约束原始 Query、拆解任务、Scope、允许工具、预算、Evidence、Failure、Memory、
+Outcome、生命周期和状态转换。现场 Evidence 没有已验证 Scope 时模型校验直接失败；非只读工具
+进入统一 Capability 状态时同样直接失败。
+
+## 4. 数据与基础设施边界
+
+```mermaid
+flowchart LR
+    API["FastAPI / SSE"] --> PG[("Postgres Facts")]
+    API --> Redis[("Redis Streams / Cache")]
+    Redis --> Worker["Diagnosis Workers"]
+    API --> Agent["Unified AIOps Agent"]
+    Worker --> Agent
+    Agent --> Milvus[("Milvus Vectors")]
+    Agent --> MCP["MCP / Local Read-only Tools"]
+    Agent --> PG
 ```
 
-### Skill Router
+Postgres 是持久事实权威：
 
-`app/agents/skill_router.py` 把 Skill 的名称、描述和触发词组织成菜单，请 LLM 返回结构化选择。
-当 LLM 失败时，规则只负责判断输入是否属于 OnCall 范围，再回退到 `generic_oncall` 或直接结束。
+- `alerts / incident_groups / incidents / diagnosis_tasks`：告警、事故和后台任务。
+- `workflow_runs / workflow_events`：统一状态快照、版本、Lease 与转换事件。
+- `agent_runs / tool_calls / evidence / reports`：执行、工具、证据和报告审计。
+- `human_decisions / approvals`：根因、计划和其他人工决策。
+- `memory_records / entity_profiles / experience_records`：记忆、画像和成败经验。
+- `evaluation_samples`：事故关闭时生成、与在线召回隔离的评测样本。
 
-### Planner / Executor / Replanner
+Redis 负责 Streams、消费者协调、限流和短期会话缓存，不作为事故或工作流事实来源。诊断报告缓存
+按 Session 哈希隔离，禁止使用全局 Key 把一位用户的机器状态注入另一位用户的 RAG 对话。
+Milvus 只保存知识向量；运行时机器数据不进入公共知识语料。
 
-- Planner 根据选中的 Playbook 生成诊断步骤。
-- Executor 通过 `app/runtime/tool_filter.py` 和权限决策收窄工具，再执行当前步骤。
-- Replanner 根据已获得证据继续、调整、切换 Skill 或结束。
-- Harness 统一管理模型档位、预算、Prompt 和运行统计。
+## 5. Query、Skill 与 Tool 的渐进式披露
 
-### 工具边界
+Query Understanding 先保留不可变 `raw_query`，再生成改写 Query、目标、实体、缺失信息和最多
+12 个明确子任务。作用域或意图不足时进入 Clarify；达到轮次预算仍不充分则关闭式失败。
 
-Skill 的 `allowed_tools` 不是对所有查询工具的绝对白名单：
+Capability Registry 先暴露能力名称与用途；路由命中后才展开候选 Skill；Skill 命中后才读取完整
+Playbook 和允许工具。Tool 必须同时通过 Capability allowlist、Skill allowlist、`ToolMeta` 只读
+判断、PermissionMode、Guardrail 与预算检查。高风险、副作用或通知工具不属于当前统一链路；
+Docker restart 即使和只读 Docker 工具同服，也不能被整体视为只读。
 
-- 写入、通知和高风险工具必须由 Skill 显式声明。
-- 已在 ToolMeta 中登记为只读的工具，可由运行时策略补充，降低 Skill 漏配导致模型猜测的风险。
-- PermissionMode 与 Guardrail 会继续给候选工具生成 `allow / ask / deny` 决策。
-- 高风险工具默认阻断；`ask_destructive` 模式可以进入人工审批。
+工具失败采用有限重试：仅可重试错误且仍有预算时重试；达到上限后按能力降级为替代数据源、
+证据不足报告或关闭式终止。副作用操作若未来接入，必须先提供幂等键或“不确定结果”恢复路径。
 
-## 4. deep 诊断图
+## 6. RAG 与证据隔离
 
-```text
-IncidentManager
-    -> CorrelationContext
-    -> EvidencePlan
-    -> MetricAgent / LogAgent / InfraAgent / RunbookAgent
-    -> EvidenceReducer
-    -> RCAJudge
-    -> RemediationPlanner
-    -> ReportAgent
-```
+知识库采用 Parent-Child 切分、Milvus 向量召回、BM25、RRF 融合和可选 Rerank。检索结果记录
+来源并作为 `reference` Evidence，不可证明当前 CPU、内存、进程或服务状态。现场事实来自经过
+Scope 校验的 MCP/本地工具，记录 observed_at、tool_call_id 和调用状态。
 
-### 上下文和派遣
+诊断报告的会话缓存使用 Session 派生 Key；深度关联只读取 Postgres 中 `status=verified` 且
+`memory_type=verified_knowledge` 的脱敏记忆。Candidate、失败对话和运行时 Wiki 不参与默认召回，
+从而隔离真实机器信息、Benchmark Mock 与知识语料。
 
-- IncidentManager 读取任务、事件组和告警元信息；手动 SSE 没有任务事实时会安全降级。
-- CorrelationContext 聚合同组告警和 LLM Wiki 历史经验。
-- EvidencePlan 使用确定性关键词规则决定派遣哪些专业 Agent。图结构固定为四路 fan-out，
-  未被派遣的节点通过 Guard 跳过，不调用 LLM。
+## 7. Memory、画像与经验生命周期
 
-### 专业 Agent
+读取发生在 Workflow 创建时，由服务端按 Session、Incident、Service 和 Scope 选择：
 
-| Agent | 当前数据来源 | Evidence 类型 | 当前限制 |
-| --- | --- | --- | --- |
-| MetricAgent | Prometheus（配置时优先）与本机系统工具 | `metric_snapshot` | 未配置 Prometheus 时只能观察运行 Agent 的本机 |
-| LogAgent | 已导入 RAG 语料中的告警规则、可选日志模板和 SOP | `log_excerpt` | 不直接连接 Loki / Elasticsearch，也不读取原始日志 |
-| InfraAgent | 本机系统工具及已连接的只读 Docker / Network MCP 工具 | `infra_snapshot` | 外部工具缺失时只能返回本机快照 |
-| RunbookAgent | RAG 中的 SOP、Runbook 和告警处理建议 | `runbook_match` | 与 LogAgent 共用检索工具，通过 Prompt 区分关注点 |
+- Session Memory 只在当前会话内提供连续上下文。
+- Verified Knowledge 只有人工确认根因、同 Scope 验证恢复、脱敏通过并关闭事故后才能召回。
+- Entity Profile 保存操作者、服务或资源的稳定脱敏属性及关联 Memory。
+- Experience 保存成功与失败路径；失败经验用于复盘，不会自动成为知识结论。
 
-专业 Agent 使用隔离的最小 LLM/工具循环，只把压缩 Evidence 写入共享状态，中间对话不会互相
-传播。单个 Agent 失败时会返回带 `error_type` 的 Evidence，避免整张图因一个数据源失败而中断。
+普通完成只生成 Candidate 和写入决策。事故关闭在一个数据库事务中完成：更新 Workflow、追加关闭
+事件、保存人工决定、写 Verified Memory、归档 Candidate、写成功经验、更新画像、生成隔离评测
+样本并关闭 Incident/Group。任一步失败都会回滚，避免出现“事故已关但知识未写”或反向情况。
 
-当前专业 Agent 使用硬编码的只读工具集合，并通过 `decisions=None` 调用并行工具运行器；它们尚未
-复用 fast 链路完整的 PermissionMode 决策。这是已知限制，新增任何写工具前必须先补齐权限集成。
+长期治理依赖 `expires_at`、`superseded_by`、status 和质量分：过期、冲突或被更新的记录不进入
+召回；删除应先归档/失效并保留审计，不直接把历史事实从事故链路中抹除。
 
-### 归并、RCA 与处置
+## 8. 事故生命周期与 HITL
 
-- EvidenceReducer 使用确定性分数归并候选：现场指标和基础设施证据优先，知识检索作为辅助。
-- RCAJudge 只读取候选摘要和 Evidence 引用，不直接吞入全部原始工具输出；LLM 失败时有确定性回退。
-- RemediationPlanner 生成建议，不直接执行处置。包含写入风险的建议必须标记人工确认。
-- ReportAgent 输出引用 Evidence 的结构化 Markdown 报告。
+诊断完成后依次进入：
 
-deep 图内部暂用 `ev_0` 这类内存引用关联 Evidence；后台任务的审计路径再把运行结果写入事实库。
-这不是跨任务稳定的公共 Evidence ID。
+1. 人工确认或修正根因；
+2. 人工确认只读处置/验证计划；
+3. 重新调用同一 Scope 的只读工具；
+4. 将新 Evidence 与基线比较，得到 recovered / not_recovered / inconclusive；
+5. recovered 且脱敏通过后关闭事故并学习。
 
-## 5. RAG 链路
+系统优化助手只输出建议、风险、证据引用和确认要求，不自动修改配置、终止进程或重启服务。
+模型报告中的“已恢复”不会改变生命周期；只有新采集 Evidence 能完成恢复验证。
 
-```text
-Markdown / SOP / Alert corpus
-    -> 结构化切分
-    -> Parent-Child chunks
-    -> child 向量写入 Milvus
-    -> Vector + BM25 召回
-    -> RRF 融合
-    -> 可选 Rerank
-    -> top-k parent context
-```
+## 9. 评测与发布门槛
 
-默认公开语料包括 954 条 Prometheus 告警文档、通用/Redis/MySQL SOP 和评测 Runbook。
-`scripts/convert_log_templates.py` 可以从用户提供的 loghub-2.0 数据额外生成日志模板，但这些模板
-不随默认公开仓库分发。
+评测分为确定性契约、路由、检索、回答质量、诊断 Fixture、事故闭环和并发可靠性。版本化 JSONL
+覆盖正常/边界、正反例、简单/复杂、作用域污染和工具失败。事故关闭生成的样本写入独立表，不能
+参与同一次在线回答的召回。
 
-检索结果和指标依赖当前语料、Embedding、Milvus Collection、Reranker、模型和运行环境。
-历史结果只能作为对应配置的证据，不能视为所有部署的保证。
+在线 Agent 的评测能力只展示数据集数量和隔离样本分布，不自动启动可能付费的 Provider 调用。
+离线命令和 Release Gate 见[评测策略](EVALUATION_STRATEGY.md)与
+[Benchmark README](../benchmark/README.md)。历史指标必须保留环境、时间、数据集版本和命令，
+不能外推为其他机器的生产性能。
 
-统一工作流另有不依赖 Provider 和基础设施的 `workflow_contract` 与 `diagnosis_fixture` 评测，
-分别覆盖 Query/Scope/Capability/生命周期契约，以及 Fast → Evidence Gate → Deep、正反例行为和
-Evidence 夹具隔离。它们与检索、RAGAS、诊断 E2E 和真实事故结果构成
-分层评测，而不是合并成一个无法定位问题的总分。详细边界见
-[AIOps 评测策略](EVALUATION_STRATEGY.md)。
+## 10. 当前验证边界
 
-## 6. 事实、状态和审计
-
-### Postgres
-
-Postgres 保存长期事实，包括 Alert、IncidentGroup、DiagnosisTask、AgentRun、ToolCall、Evidence、
-ApprovalRequest 和 Report。Schema 当前由 `app/db/postgres.py` 初始化；变更需要兼容与恢复方案。
-
-### Redis
-
-Redis 保存运行态队列、Consumer Group、Worker 心跳、全局并发槽、限流计数和部分会话数据。
-它不是诊断事实的最终权威。
-
-### LLM Wiki
-
-`data/wiki/` 保存运行时经验。除 `CONVENTIONS.md` 外的内容由 `.gitignore` 排除，因为其中可能包含
-真实事件信息。不能把运行时 Wiki 当作可公开提交的普通文档。
-
-## 7. 并发和失败恢复
-
-系统区分三种不同数量：接入请求数、排队任务数、真实执行中的诊断数。
-
-```text
-请求洪峰
-    -> API 校验、落库、入队
-    -> Redis Streams 按优先级缓冲
-    -> Worker 领取
-    -> Redis 全局执行槽限制昂贵诊断
-    -> 成功 ACK / 失败重试 / 最终 DLQ
-```
-
-- 手动接口和 Webhook 使用固定窗口限流；Redis 不可用时采用 fail-open。
-- Worker 心跳、Pending 回收、最大尝试次数和 DLQ 防止任务静默丢失。
-- 增加 Worker 数量不会自动提高真实诊断并发；全局执行槽仍是上限。
-- 同步 SSE 与后台 Worker 使用不同的全局槽，避免一种入口独占全部资源。
-
-详细验证方式见[并发测试指南](CONCURRENCY_TEST_GUIDE.md)。
-
-## 8. 进程与部署边界
-
-| 进程 | 入口 | 说明 |
-| --- | --- | --- |
-| API | `uvicorn app.main:app` | HTTP/SSE、前端静态文件、同步诊断和任务提交 |
-| Worker | `python -m app.diagnosis_worker` | 消费队列并执行后台诊断 |
-| MCP system | `mcp_servers/system_server.py` | 本机系统快照 |
-| MCP websearch | `mcp_servers/websearch_server.py` | 本地 open-webSearch 适配 |
-| MCP winlog | `mcp_servers/winlog_server.py` | Windows 事件日志 |
-| MCP network | `mcp_servers/network_server.py` | DNS、HTTP、端口和 Ping |
-| MCP docker | `mcp_servers/docker_server.py` | Docker 查询与受控重启能力 |
-| open-webSearch | `open-webSearch-main/` | 独立 Node.js 搜索服务 |
-
-API 和 Worker 使用同一个 Python 镜像，通过 Compose Command 区分角色。
-
-## 9. 已知工程限制
-
-- 已有工作流契约和 Skill Router 等少量 `unittest` 回归测试，但没有完整测试覆盖、CI Workflow、
-  `pyproject.toml` 或统一 Formatter 配置。
-- 多个核心模块仍较大，职责拆分和复杂度治理需要单独重构计划与回归证据。
-- Windows `run.ps1` 不是完整 V3 后台拓扑启动器；完整部署应使用 Compose `app` Profile。
-- deep 专业 Agent 尚未统一接入 fast 的 PermissionMode 决策。
-- LogAgent 默认只检索知识库，不连接真实日志后端。
-- CORS 当前允许全部来源，适合本地演示，不适合直接暴露到生产公网。
-- 限流在 Redis 故障时 fail-open，这是可用性优先的明确取舍，不等同于安全网关。
-- 缺少用户认证、多租户隔离和细粒度数据授权。
-- `requirements.txt` 使用范围依赖而非完整锁文件，部署复现性受上游发布影响。
-- V2 生命周期尚未持久化到 Postgres；统一 Capability Worker 和目标节点 Agent 尚未实现。
-
-这些限制应在具体需求出现时按风险逐项处理，不能通过一次大规模“整理”静默改写。
+- 安全基线是 Ruff、CompileAll、Compose 配置、确定性 `unittest` 和 Benchmark Fixture。
+- 需要 Milvus、Postgres、Redis、MCP 或 Provider 的链路必须在服务就绪且确认费用/数据范围后验证。
+- 本机 Scope 必须绑定实际执行节点；不能把任务随机分发给观察目标不同的 Worker。
+- Alertmanager 后台队列已使用 Redis Streams；统一本机 Capability 在目标 Agent 适配完成前保持
+  关闭式拒绝后台提交，避免 Worker 容器被误当成用户主机。
+- 专业 Agent 当前只允许现有只读工具。新增任何写工具前必须完成统一权限与审批集成。
+- 当前没有完整企业级认证、租户隔离、跨区域高可用或灾备承诺。

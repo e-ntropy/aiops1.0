@@ -266,5 +266,167 @@ CREATE INDEX IF NOT EXISTS idx_approval_requests_status_created
 CREATE INDEX IF NOT EXISTS idx_approval_requests_task
     ON approval_requests(task_id, created_at DESC);
 
--- 注: 经验沉淀已改为文件系统 LLM Wiki (data/wiki/, 见 app/wiki/), 不再用 Postgres 表。
+-- ============================================================
+-- 统一 AIOps Workflow 事实、事件与学习闭环
+-- ============================================================
+CREATE TABLE IF NOT EXISTS workflow_runs (
+    run_id TEXT PRIMARY KEY,
+    schema_version TEXT NOT NULL DEFAULT '2.0',
+    revision BIGINT NOT NULL DEFAULT 1 CHECK (revision >= 1),
+    session_id TEXT NOT NULL,
+    incident_id TEXT,
+    incident_group_id TEXT,
+    capability_id TEXT NOT NULL DEFAULT '',
+    execution_strategy TEXT NOT NULL DEFAULT '',
+    phase TEXT NOT NULL,
+    scope_kind TEXT NOT NULL DEFAULT 'none',
+    state JSONB NOT NULL,
+    terminal_reason TEXT NOT NULL DEFAULT '',
+    lease_owner TEXT,
+    lease_expires_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at TIMESTAMPTZ
+);
+
+ALTER TABLE workflow_runs ADD COLUMN IF NOT EXISTS lease_owner TEXT;
+ALTER TABLE workflow_runs ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ;
+ALTER TABLE workflow_runs ADD COLUMN IF NOT EXISTS incident_group_id TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_workflow_runs_session_updated
+    ON workflow_runs(session_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_workflow_runs_incident_updated
+    ON workflow_runs(incident_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_workflow_runs_group_updated
+    ON workflow_runs(incident_group_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_workflow_runs_phase_updated
+    ON workflow_runs(phase, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS workflow_events (
+    id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL REFERENCES workflow_runs(run_id) ON DELETE CASCADE,
+    revision BIGINT NOT NULL,
+    event_type TEXT NOT NULL,
+    from_phase TEXT NOT NULL DEFAULT '',
+    to_phase TEXT NOT NULL DEFAULT '',
+    actor TEXT NOT NULL DEFAULT 'system',
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (run_id, revision, event_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_workflow_events_run_created
+    ON workflow_events(run_id, created_at);
+
+CREATE TABLE IF NOT EXISTS human_decisions (
+    id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL REFERENCES workflow_runs(run_id) ON DELETE CASCADE,
+    incident_id TEXT,
+    decision_type TEXT NOT NULL,
+    status TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_human_decisions_run_created
+    ON human_decisions(run_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS memory_records (
+    id TEXT PRIMARY KEY,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    tier TEXT NOT NULL,
+    memory_kind TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'candidate',
+    session_id TEXT NOT NULL DEFAULT '',
+    incident_id TEXT NOT NULL DEFAULT '',
+    service TEXT NOT NULL DEFAULT '',
+    scope_key TEXT NOT NULL DEFAULT '',
+    content JSONB NOT NULL DEFAULT '{}'::jsonb,
+    confidence DOUBLE PRECISION NOT NULL DEFAULT 0,
+    provenance JSONB NOT NULL DEFAULT '{}'::jsonb,
+    redaction_passed BOOLEAN NOT NULL DEFAULT false,
+    verified_at TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ,
+    last_recalled_at TIMESTAMPTZ,
+    recall_count INTEGER NOT NULL DEFAULT 0,
+    superseded_by TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_verified_scope
+    ON memory_records(status, service, scope_key, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_memory_incident
+    ON memory_records(incident_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_memory_session
+    ON memory_records(session_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS entity_profiles (
+    id TEXT PRIMARY KEY,
+    subject_type TEXT NOT NULL,
+    subject_key TEXT NOT NULL,
+    revision BIGINT NOT NULL DEFAULT 1,
+    attributes JSONB NOT NULL DEFAULT '{}'::jsonb,
+    source_memory_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (subject_type, subject_key)
+);
+
+CREATE TABLE IF NOT EXISTS experience_records (
+    id TEXT PRIMARY KEY,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    source_run_id TEXT NOT NULL REFERENCES workflow_runs(run_id) ON DELETE CASCADE,
+    incident_id TEXT NOT NULL DEFAULT '',
+    outcome TEXT NOT NULL,
+    signature TEXT NOT NULL DEFAULT '',
+    summary TEXT NOT NULL DEFAULT '',
+    root_cause TEXT NOT NULL DEFAULT '',
+    evidence_types JSONB NOT NULL DEFAULT '[]'::jsonb,
+    actions JSONB NOT NULL DEFAULT '[]'::jsonb,
+    applicability JSONB NOT NULL DEFAULT '{}'::jsonb,
+    confidence DOUBLE PRECISION NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'candidate',
+    reuse_count INTEGER NOT NULL DEFAULT 0,
+    last_reused_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_experience_lookup
+    ON experience_records(status, outcome, signature, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS evaluation_samples (
+    id TEXT PRIMARY KEY,
+    source_run_id TEXT NOT NULL REFERENCES workflow_runs(run_id) ON DELETE CASCADE,
+    incident_id TEXT NOT NULL DEFAULT '',
+    capability_id TEXT NOT NULL DEFAULT '',
+    query TEXT NOT NULL,
+    expected_root_cause TEXT NOT NULL,
+    evidence_types JSONB NOT NULL DEFAULT '[]'::jsonb,
+    verification_status TEXT NOT NULL,
+    review_status TEXT NOT NULL DEFAULT 'candidate',
+    dataset_split TEXT NOT NULL DEFAULT 'quarantine',
+    isolation_status TEXT NOT NULL DEFAULT 'isolated',
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (source_run_id, id)
+);
+
+ALTER TABLE evaluation_samples ADD COLUMN IF NOT EXISTS capability_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE evaluation_samples ADD COLUMN IF NOT EXISTS isolation_status TEXT NOT NULL DEFAULT 'isolated';
+
+CREATE INDEX IF NOT EXISTS idx_evaluation_samples_review
+    ON evaluation_samples(review_status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version TEXT PRIMARY KEY,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+INSERT INTO schema_migrations(version)
+VALUES ('20260811_workflow_fact_store')
+ON CONFLICT DO NOTHING;
 """

@@ -1,7 +1,7 @@
-"""AIOps V2 工作流的稳定数据契约。
+"""统一 AIOps Agent 的稳定工作流数据契约。
 
 这些模型刻意与 LangGraph 节点解耦：API、同步工作流、后台 Worker 和评测都复用
-同一套输入输出，避免 fast/deep 各自维护不兼容的状态字段。
+同一套输入输出，避免内部诊断阶段各自维护不兼容的状态字段。
 """
 
 from __future__ import annotations
@@ -257,6 +257,13 @@ class MemoryContext(BaseModel):
     session_refs: list[str] = Field(default_factory=list)
     incident_refs: list[str] = Field(default_factory=list)
     knowledge_refs: list[str] = Field(default_factory=list)
+    profile_refs: list[str] = Field(default_factory=list)
+    profile_items: list[dict[str, Any]] = Field(default_factory=list, max_length=10)
+    recalled_items: list[dict[str, Any]] = Field(
+        default_factory=list,
+        max_length=20,
+        description="由服务端按作用域召回的 Memory 摘要；Candidate 不得进入此列表。",
+    )
     candidate_writes: list[dict[str, Any]] = Field(default_factory=list)
     read_decisions: list[dict[str, Any]] = Field(default_factory=list)
     write_decisions: list[dict[str, Any]] = Field(default_factory=list)
@@ -282,9 +289,15 @@ class WorkflowTransition(BaseModel):
 
 class WorkflowState(BaseModel):
     state_version: str = "2.0"
+    revision: int = Field(
+        default=0,
+        ge=0,
+        description="Postgres 乐观锁版本；0 表示尚未持久化。",
+    )
     run_id: str = Field(default_factory=lambda: f"run_{uuid4().hex}")
     session_id: str = "default"
     incident_id: str = ""
+    incident_group_id: str = ""
     capability_id: str = ""
     execution_strategy: str = ""
     selected_skills: list[str] = Field(default_factory=list)

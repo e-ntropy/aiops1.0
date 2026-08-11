@@ -1,4 +1,4 @@
-"""V2 工作流不可绕过的代码层状态与作用域约束。"""
+"""统一工作流不可绕过的代码层状态与作用域约束。"""
 
 from __future__ import annotations
 
@@ -38,4 +38,3 @@ def can_execute_live_tools(state: WorkflowState) -> tuple[bool, str]:
     if state.phase not in {WorkflowPhase.READY, WorkflowPhase.EXECUTING}:
         return False, f"当前阶段 {state.phase.value} 不允许工具执行"
     return True, "allowed"
-

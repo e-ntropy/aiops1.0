@@ -34,10 +34,12 @@ def _meta_key(session_id: str) -> str:
     return f"rag:chat:{_session_digest(session_id)}:meta"
 
 
-# AIOps 诊断报告共享缓存 (跨 session, 给 RAG Chat 联网判断用)
-_DIAGNOSIS_REPORTS_KEY = "rag:diagnosis:reports"
 _DIAGNOSIS_REPORTS_MAX = 5
 _DIAGNOSIS_REPORT_MAX_CHARS = 8000
+
+
+def _diagnosis_reports_key(session_id: str) -> str:
+    return f"rag:diagnosis:{_session_digest(session_id)}:reports"
 
 
 def _sanitize_message(raw: Any) -> dict[str, Any] | None:
@@ -210,43 +212,48 @@ async def load_session(session_id: str) -> dict[str, Any]:
 
 
 async def append_diagnosis_report(report: str, *, session_id: str | None = None) -> None:
-    """AIOps 诊断生成的最终报告写到共享 list, 供 RAG Chat 联网判断使用.
+    """按 session 保存诊断报告，禁止跨会话隐式共享。
 
-    设计:
-      - 跨 RAG Chat session 共享 (key 不带 session_id), 因为 AIOps 诊断的
-        session_id 与 RAG Chat 的 'web-chat' 不同, 用全局 list 最简单.
-      - 只保留最近 N 份, 避免无限增长.
-      - 单份报告内容截断到 8KB, 防止极端情况撑爆 Redis.
+    调用方必须显式传入 session_id；缺失时关闭式跳过，避免诊断内容被其他
+    用户或任务的 RAG Chat 召回。
     """
-    if not report:
+    if not report or not session_id:
         return
     client = await _get_redis()
     if client is None:
         return
     payload = {
         "ts": _now_iso(),
-        "session_id": session_id or "",
+        "session_id": session_id,
         "report": report[:_DIAGNOSIS_REPORT_MAX_CHARS],
     }
     try:
-        await client.lpush(_DIAGNOSIS_REPORTS_KEY, json.dumps(payload, ensure_ascii=False))
-        await client.ltrim(_DIAGNOSIS_REPORTS_KEY, 0, _DIAGNOSIS_REPORTS_MAX - 1)
-        await client.expire(_DIAGNOSIS_REPORTS_KEY, max(60, settings.rag_chat_memory_ttl_sec))
+        key = _diagnosis_reports_key(session_id)
+        await client.lpush(key, json.dumps(payload, ensure_ascii=False))
+        await client.ltrim(key, 0, _DIAGNOSIS_REPORTS_MAX - 1)
+        await client.expire(key, max(60, settings.rag_chat_memory_ttl_sec))
     except Exception as e:
         logger.warning(f"[chat-memory] 诊断报告写入失败: {type(e).__name__}: {e}")
 
 
-async def get_recent_diagnosis_reports(limit: int = 3) -> list[dict[str, Any]]:
-    """RAG Chat 联网判断时读取最近若干份 AIOps 诊断报告 (按时间倒序).
+async def get_recent_diagnosis_reports(
+    *,
+    session_id: str,
+    limit: int = 3,
+) -> list[dict[str, Any]]:
+    """只读取当前 session 的 AIOps 诊断报告。"""
 
-    Returns:
-        list[{"ts": iso, "session_id": str, "report": str}]
-    """
+    if not session_id:
+        return []
     client = await _get_redis()
     if client is None:
         return []
     try:
-        rows = await client.lrange(_DIAGNOSIS_REPORTS_KEY, 0, max(0, limit - 1))
+        rows = await client.lrange(
+            _diagnosis_reports_key(session_id),
+            0,
+            max(0, limit - 1),
+        )
         out: list[dict[str, Any]] = []
         for row in rows:
             try:

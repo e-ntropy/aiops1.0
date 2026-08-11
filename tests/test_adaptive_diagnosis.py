@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 from collections.abc import AsyncIterator
 from typing import Any
+from unittest.mock import AsyncMock, patch
 
 from app.workflows.adaptive_diagnosis import stream_adaptive_diagnosis
 from app.workflows.orchestrator import prepare_workflow
@@ -13,13 +14,22 @@ class FakeDiagnosisRunner:
         self.fast_events = fast_events
         self.deep_events = deep_events
         self.calls: list[str] = []
+        self.call_kwargs: list[dict[str, Any]] = []
 
     async def __call__(self, query: str, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
         mode = str(kwargs["diagnosis_mode"])
         self.calls.append(mode)
+        self.call_kwargs.append(kwargs)
         events = self.fast_events if mode == "fast" else self.deep_events
         for event in events:
             yield event
+
+
+class FailingDiagnosisRunner:
+    async def __call__(self, query: str, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
+        if False:
+            yield {}
+        raise RuntimeError("collector crashed")
 
 
 def _tool_event(name: str) -> dict[str, Any]:
@@ -81,6 +91,9 @@ class AdaptiveDiagnosisTests(unittest.IsolatedAsyncioTestCase):
         escalation = next(event for event in events if event["type"] == "deep_escalation")
         self.assertTrue(escalation["data"]["preserved_evidence_ids"])
         self.assertEqual(events[-1]["data"]["effective_mode"], "deep")
+        self.assertEqual(events[-1]["data"]["execution_path"], "specialist_escalated")
+        self.assertTrue(runner.call_kwargs[1]["initial_evidence"])
+        self.assertFalse(runner.call_kwargs[1]["persist_legacy_wiki"])
 
     async def test_fast_error_uses_deep_as_fallback(self) -> None:
         runner = FakeDiagnosisRunner(
@@ -169,6 +182,26 @@ class AdaptiveDiagnosisTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertEqual(events[-1]["type"], "adaptive_failed")
         self.assertEqual(events[-1]["data"]["state"]["evidence"][0]["status"], "error")
+
+    async def test_runner_exception_finishes_audit_before_propagation(self) -> None:
+        audit = AsyncMock()
+        audit.agent_run_id = "ar_test"
+        with (
+            patch(
+                "app.workflows.adaptive_diagnosis.WorkflowDiagnosisAudit",
+                return_value=audit,
+            ),
+            self.assertRaisesRegex(RuntimeError, "collector crashed"),
+        ):
+            _ = [
+                event
+                async for event in stream_adaptive_diagnosis(
+                    await self._state(),
+                    runner=FailingDiagnosisRunner(),
+                )
+            ]
+        audit.finish.assert_awaited_once()
+        self.assertEqual(audit.finish.await_args.kwargs["status"], "failed")
 
 
 if __name__ == "__main__":

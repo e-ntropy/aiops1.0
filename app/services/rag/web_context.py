@@ -141,6 +141,7 @@ def build_restricted_web_query(
 async def build_web_context(
     rewritten_question: str,
     *,
+    session_id: str,
     summary: str,
     recent_messages: list[dict[str, Any]],
     enabled: bool,
@@ -159,7 +160,10 @@ async def build_web_context(
         return f"({reason})", [], [], reason
 
     try:
-        recent_reports = await chat_memory.get_recent_diagnosis_reports(limit=3)
+        recent_reports = await chat_memory.get_recent_diagnosis_reports(
+            session_id=session_id,
+            limit=3,
+        )
     except Exception as e:
         logger.warning(f"[rag-web] 读取最近诊断报告失败: {type(e).__name__}: {e}")
         recent_reports = []
